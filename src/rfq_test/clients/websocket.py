@@ -870,6 +870,13 @@ class MakerStreamClient(BaseStreamClient):
     
     async def send_quote(self, quote_data: dict, wait_for_response: bool = False, response_timeout: float = 2.0) -> Optional[dict]:
         """Send a quote.
+
+        A successful quote ACK only confirms that the indexer accepted and
+        routed a valid quote. It is not a taker acceptance signal. If no
+        quote_update or settlement_update arrives before the maker-set expiry,
+        treat the quote as not accepted by the taker. When the taker accepts
+        and settlement is attempted, the maker receives settlement_update with
+        the trade result or failure.
         
         Args:
             quote_data: Quote parameters including signature

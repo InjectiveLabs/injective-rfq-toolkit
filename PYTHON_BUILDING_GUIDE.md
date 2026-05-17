@@ -554,8 +554,10 @@ Append `/TakerStream` or `/MakerStream` to the base URL.
 - **Auth handshake:** First inbound message after connect is `MakerChallenge`. Sign and reply with `MakerAuth` before any quoting. Skipping this step keeps the stream open but produces no `request` events. The Python `MakerStreamClient` handles this automatically when configured with `auth_private_key`, `auth_evm_chain_id`, and `auth_contract_address`.
 - **Optional subscriptions:** Set `subscribe_to_quotes_updates: true` and `subscribe_to_settlement_updates: true` as headers to receive those maker stream updates.
 - **Receive:** Requests arrive as stream messages
+- **Quote ACK meaning:** `quote_ack status="success"` means the indexer accepted and routed a valid quote. It is not a taker fill or decline signal.
+- **No not-accepted event:** Makers choose the quote `expiry`; if no `quote_update` or `settlement_update` arrives before that maker-set expiry, treat the quote as not accepted by the taker. The indexer intentionally sends no separate "not accepted" notice.
 - **Quote update scope:** `quote_update` events are sent for quotes whose `maker` matches `maker_address`.
-- **Settlement update scope:** `settlement_update` events are sent when a settlement includes at least one quote from `maker_address`, whether that specific quote was executed or not.
+- **Settlement update scope:** `settlement_update` events are sent when the taker accepts and settlement is attempted, with the trade result or failure. They are scoped to settlements that include at least one quote from `maker_address`, whether that specific quote was executed or not.
 - **Quote status meaning:** In `quote_update`, `status="accepted"` means the quote was used; `status="rejected"` means it was considered but not used.
 - **Executed fields:** In `quote_update`, `executed_quantity` and `executed_margin` are the actually filled amount and margin for that quote.
 - **Send:** Quotes as `RFQQuoteType` with fields: `chain_id`, `contract_address`, `market_id`, `rfq_id`, `taker_direction`, `margin`, `quantity`, `price`, `expiry`, `maker`, `taker`, `signature`

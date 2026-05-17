@@ -209,8 +209,9 @@ mm_client = MakerStreamClient(
 ```
 
 Update event semantics:
+- `quote_ack status="success"` only means the indexer accepted and routed the quote. There is intentionally no later "not accepted" event; if no update arrives before the maker-set `expiry`, treat the quote as not accepted by the taker.
 - `quote_update` arrives for any quote whose `maker` matches `maker_address`. `status="accepted"` means used in settlement; `status="rejected"` means evaluated but not used. `executed_quantity` / `executed_margin` are the actual fill.
-- `settlement_update` arrives whenever a settlement included at least one quote from this maker — even quotes that weren't the winning one.
+- `settlement_update` arrives when the taker accepts and settlement is attempted, with the trade result or failure. It also arrives whenever a settlement included at least one quote from this maker, even quotes that were not the winning one.
 
 ### Conditional orders (TP/SL)
 
