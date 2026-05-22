@@ -530,7 +530,7 @@ challenge-response protocol without the reusable client wrapper.
 
 | Environment | WebSocket Base URL |
 |-------------|--------------------|
-| Testnet | `wss://testnet.rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |
+| Testnet | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |
 
 Append `/TakerStream` or `/MakerStream` to the base URL.
 

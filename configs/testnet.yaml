@@ -3,7 +3,7 @@
 environment: testnet
 
 chain:
-  grpc_endpoint: "testnet-grpc.injective.dev:443"
+  grpc_endpoint: "testnet.sentry.chain.grpc.injective.network:443"
   # Sentry LCD: used for mark price (v2 derivative markets) and chain queries
   lcd_endpoint: "https://testnet.sentry.lcd.injective.network"
   chain_id: "injective-888"
@@ -15,10 +15,10 @@ chain:
 # RFQ Indexer API (testnet). Server is gRPC-over-WS; path = /injective_rfq_rpc.InjectiveRfqRPC/<Method> (see indexer proto).
 # Client appends /MakerStream or /TakerStream to ws_endpoint.
 indexer:
-  ws_endpoint: "wss://testnet.rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
+  ws_endpoint: "wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
   http_endpoint: "https://testnet.rfq.injective.network"
-  grpc_endpoint: "testnet.rfq.grpc.injective.network:443"
-  grpc_web_endpoint: "https://testnet.rfq.grpc.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
+  grpc_endpoint: "rfq.grpc.testnet.injective.network:443"
+  grpc_web_endpoint: "https://rfq.grpc-web.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
 
 contract:
   address: "inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk"
