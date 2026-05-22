@@ -1,5 +1,5 @@
 # Testnet environment configuration
-# RFQ testnet: https://testnet.rfq.injective.network (swagger: /swagger/)
+# RFQ testnet: https://rfq.grpc-web.testnet.injective.network
 environment: testnet
 
 chain:
@@ -16,7 +16,7 @@ chain:
 # Client appends /MakerStream or /TakerStream to ws_endpoint.
 indexer:
   ws_endpoint: "wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
-  http_endpoint: "https://testnet.rfq.injective.network"
+  http_endpoint: "https://rfq.grpc-web.testnet.injective.network"
   grpc_endpoint: "rfq.grpc.testnet.injective.network:443"
   grpc_web_endpoint: "https://rfq.grpc-web.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
 
@@ -52,5 +52,5 @@ markets:
 
 faucet:
   enabled: true
-  url: "https://testnet-faucet.injective.dev"
+  url: "https://rfq.inj.so/api/faucet"
   rate_limit_seconds: 60
