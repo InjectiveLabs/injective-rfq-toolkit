@@ -3,7 +3,7 @@
 environment: testnet
 
 chain:
-  grpc_endpoint: "testnet-grpc.injective.dev:443"
+  grpc_endpoint: "testnet.sentry.chain.grpc.injective.network:443"
   # Sentry LCD: used for mark price (v2 derivative markets) and chain queries
   lcd_endpoint: "https://testnet.sentry.lcd.injective.network"
   chain_id: "injective-888"

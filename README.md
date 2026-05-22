@@ -170,7 +170,7 @@ pytest                   # everything except `load`
 | MakerStream WSS | `wss://testnet.rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` |
 | TakerStream WSS | `wss://testnet.rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` |
 | Indexer gRPC-web | `https://testnet.rfq.grpc.injective.network/injective_rfq_rpc.InjectiveRfqRPC` | `https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |
-| Chain gRPC | `testnet-grpc.injective.dev:443` | `sentry.chain.grpc.injective.network:443` |
+| Chain gRPC | `testnet.sentry.chain.grpc.injective.network:443` | `sentry.chain.grpc.injective.network:443` |
 | LCD | `https://testnet.sentry.lcd.injective.network` | `https://sentry.lcd.injective.network` |
 | Faucet | `https://testnet-faucet.injective.dev` | n/a |
 
