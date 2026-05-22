@@ -173,7 +173,7 @@ pytest                   # everything except `load`
 | Indexer gRPC | `rfq.grpc.testnet.injective.network:443` | `rfq.grpc.injective.network:443` |
 | Chain gRPC | `testnet.sentry.chain.grpc.injective.network:443` | `sentry.chain.grpc.injective.network:443` |
 | LCD | `https://testnet.sentry.lcd.injective.network` | `https://sentry.lcd.injective.network` |
-| Faucet | `https://testnet-faucet.injective.dev` | n/a |
+| Faucet | `https://rfq.inj.so/api/faucet` | n/a |
 
 YAML defaults live in `configs/{env}.yaml`; override individual fields via env vars when running against a bespoke deployment.
 
