@@ -169,7 +169,8 @@ pytest                   # everything except `load`
 | RFQ Contract | `inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk` | Set `RFQ_CONTRACT_ADDRESS` |
 | MakerStream WSS | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` |
 | TakerStream WSS | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` |
-| Indexer gRPC-web | `https://testnet.rfq.grpc.injective.network/injective_rfq_rpc.InjectiveRfqRPC` | `https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |
+| Indexer gRPC-web | `https://rfq.grpc-web.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC` | `https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |
+| Indexer gRPC | `rfq.grpc.testnet.injective.network:443` | `rfq.grpc.injective.network:443` |
 | Chain gRPC | `testnet.sentry.chain.grpc.injective.network:443` | `sentry.chain.grpc.injective.network:443` |
 | LCD | `https://testnet.sentry.lcd.injective.network` | `https://sentry.lcd.injective.network` |
 | Faucet | `https://testnet-faucet.injective.dev` | n/a |
