@@ -9,11 +9,15 @@
  *
  * Flow:
  * 0. Retail user has already granted permissions to RFQ contract (see setup.ts)
- * 1. Retail subscribes to StreamQuote (server-streaming gRPC)
- * 2. Retail creates RFQ request via unary Request RPC
- * 3. Makers respond with quotes (received on StreamQuote)
- * 4. Retail picks best quote within slippage tolerance
- * 5. Retail accepts quote on-chain
+ * 1. Retail opens TakerStream (bidirectional gRPC) with request_address metadata
+ * 2. Retail sends an RFQ request over the stream (message_type "request")
+ * 3. Indexer answers with a request_ack carrying the rfq_id
+ * 4. Makers' quotes arrive on the same stream (message_type "quote")
+ * 5. Retail picks best quote within slippage tolerance and accepts on-chain
+ *
+ * Note: the proto also declares a unary Request RPC, but the indexer does
+ * not implement it (returns [unimplemented]). TakerStream is the supported
+ * path for submitting requests and receiving quotes.
  */
 
 import * as grpc from "@grpc/grpc-js";
@@ -232,56 +236,94 @@ async function main() {
 
   const client = new InjectiveRfqRPC(GRPC_ENDPOINT, credentials);
 
-  console.log("\n🔌 Connecting to gRPC...");
+  console.log("\n🔌 Connecting to gRPC TakerStream...");
   console.log(`   Endpoint: ${GRPC_ENDPOINT}`);
   console.log(`   Taker:    ${TAKER_ADDRESS}`);
 
-  // ── Step 1: Subscribe to quote stream ──────────────────────────────────
+  // ── Step 1: Open bidirectional TakerStream ─────────────────────────────
+  // The indexer identifies the taker via the request_address metadata header.
+  const metadata = new grpc.Metadata();
+  metadata.add("request_address", TAKER_ADDRESS);
+
+  const takerStream = client.TakerStream(metadata);
   const receivedQuotes: CollectedQuote[] = [];
+  let ackResolve: ((id: number) => void) | null = null;
+  let ackReject: ((err: Error) => void) | null = null;
 
-  const quoteStream = client.StreamQuote({
-    addresses: [TAKER_ADDRESS],
-    market_ids: [INJUSDT_MARKET_ID],
+  takerStream.on("data", (response: any) => {
+    switch (response.message_type) {
+      case "pong":
+        return;
+      case "request_ack": {
+        const ack = response.request_ack;
+        const id = Number(ack.rfq_id);
+        console.log(`📬 Request ACK: RFQ#${id} status=${ack.status}`);
+        ackResolve?.(id);
+        ackResolve = null;
+        ackReject = null;
+        return;
+      }
+      case "quote": {
+        const q = response.quote;
+        console.log(
+          `📩 Quote received | price=${q.price} maker=${q.maker} rfq_id=${q.rfq_id}`
+        );
+        const expiryTs = q.expiry?.timestamp
+          ? Number(q.expiry.timestamp)
+          : undefined;
+        const expiryH = q.expiry?.height ? Number(q.expiry.height) : undefined;
+        receivedQuotes.push({
+          maker: q.maker,
+          margin: q.margin,
+          price: q.price,
+          quantity: q.quantity,
+          expiry: { ts: expiryTs, h: expiryH },
+          signature: q.signature,
+          sign_mode: q.sign_mode,
+          evm_chain_id: q.evm_chain_id ? Number(q.evm_chain_id) : undefined,
+          maker_subaccount_nonce: q.maker_subaccount_nonce
+            ? Number(q.maker_subaccount_nonce)
+            : 0,
+          min_fill_quantity: q.min_fill_quantity || undefined,
+        });
+        return;
+      }
+      case "error": {
+        const e = response.error;
+        const msg = `${e.code}: ${e.message_}`;
+        console.error("❌ Stream error:", msg);
+        ackReject?.(new Error(msg));
+        ackResolve = null;
+        ackReject = null;
+        return;
+      }
+      default:
+        console.log("ℹ️  Unhandled message_type:", response.message_type);
+    }
   });
 
-  quoteStream.on("data", (response: any) => {
-    const q = response.quote;
-    console.log(
-      `📩 Quote received | price=${q.price} maker=${q.maker} rfq_id=${q.rfq_id}`
-    );
-
-    const expiryTs = q.expiry?.timestamp
-      ? Number(q.expiry.timestamp)
-      : undefined;
-    const expiryH = q.expiry?.height ? Number(q.expiry.height) : undefined;
-
-    receivedQuotes.push({
-      maker: q.maker,
-      margin: q.margin,
-      price: q.price,
-      quantity: q.quantity,
-      expiry: { ts: expiryTs, h: expiryH },
-      signature: q.signature,
-      sign_mode: q.sign_mode,
-      evm_chain_id: q.evm_chain_id ? Number(q.evm_chain_id) : undefined,
-      maker_subaccount_nonce: q.maker_subaccount_nonce
-        ? Number(q.maker_subaccount_nonce)
-        : 0,
-      min_fill_quantity: q.min_fill_quantity || undefined,
-    });
+  takerStream.on("error", (err: any) => {
+    console.error("❌ TakerStream error:", err.message);
+    ackReject?.(err);
+    ackResolve = null;
+    ackReject = null;
   });
 
-  quoteStream.on("error", (err: any) => {
-    console.error("❌ StreamQuote error:", err.message);
-  });
+  console.log("📡 TakerStream open");
 
-  console.log("📡 Subscribed to StreamQuote");
-
-  // ── Step 2: Create RFQ request ─────────────────────────────────────────
+  // ── Step 2: Send RFQ request over the stream ───────────────────────────
   const clientId = uuidv4();
   const expiryMs = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-  const rfqRequest = {
+  const ackPromise = new Promise<number>((resolve, reject) => {
+    ackResolve = resolve;
+    ackReject = reject;
+    setTimeout(() => reject(new Error("Timed out waiting for request_ack")), 5000);
+  });
+
+  console.log(`\n📤 Sending RFQ request (client_id=${clientId})...`);
+  takerStream.write({
+    message_type: "request",
     request: {
       client_id: clientId,
       market_id: INJUSDT_MARKET_ID,
@@ -289,24 +331,11 @@ async function main() {
       margin,
       quantity,
       worst_price: parseFloat(maxAcceptablePrice.toFixed(3)).toString(),
-      request_address: TAKER_ADDRESS,
       expiry: expiryMs,
     },
-  };
-
-  console.log(`\n📤 Sending RFQ request (client_id=${clientId})...`);
-
-  const requestResponse: any = await new Promise((resolve, reject) => {
-    client.Request(rfqRequest, (err: any, resp: any) => {
-      if (err) return reject(err);
-      resolve(resp);
-    });
   });
 
-  const rfqId = Number(requestResponse.rfq_id);
-  console.log(
-    `📬 Request ACK: RFQ#${rfqId} status=${requestResponse.status}`
-  );
+  const rfqId = await ackPromise;
 
   // ── Step 3-4: Wait for quotes, then pick the best ─────────────────────
   const QUOTE_WAIT_MS = 2000;
@@ -322,7 +351,7 @@ async function main() {
 
   if (best.length === 0) {
     console.log("❌ No acceptable quotes received");
-    quoteStream.cancel();
+    takerStream.end();
     return;
   }
 
@@ -334,8 +363,8 @@ async function main() {
   // ── Step 5: Accept quote on-chain ──────────────────────────────────────
   await acceptQuote(maxAcceptablePrice, rfqId, INJUSDT_MARKET_ID, best);
 
-  quoteStream.cancel();
-  console.log("\n🔌 gRPC streams closed");
+  takerStream.end();
+  console.log("\n🔌 gRPC stream closed");
 }
 
 main().catch((err) => {
