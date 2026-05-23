@@ -2,10 +2,10 @@
 
 gRPC version: uses native gRPC APIs directly (no WebSocket).
 
-The taker side avoids TakerStream metadata dependencies by creating RFQs via
-the unary Request RPC and receiving quotes via StreamQuote. MakerStream
-remains bidirectional because maker-scoped subscriptions still rely on stream
-metadata.
+Both sides use bidirectional streams: TakerStream for retail (request_address
+metadata identifies the taker) and MakerStream for MM. The proto declares a
+unary Request RPC, but the indexer does not implement it (returns
+[unimplemented]) — TakerStream is the supported path.
 """
 import asyncio
 import json
@@ -32,13 +32,12 @@ from eth_hash.auto import keccak
 from rfq_test.config import get_settings, get_environment_config
 from rfq_test.crypto.wallet import Wallet
 from rfq_test.proto.injective_rfq_rpc_pb2 import (
+    CreateRFQRequestType,
     MakerAuth,
     MakerStreamStreamingRequest,
-    RFQRequestInputType,
     RFQExpiryType,
     RFQQuoteType,
-    RequestRequest,
-    StreamQuoteRequest,
+    TakerStreamStreamingRequest,
 )
 from rfq_test.proto.injective_rfq_rpc_pb2_grpc import InjectiveRfqRPCStub
 from rfq_test.clients.contract import ContractClient
@@ -227,26 +226,42 @@ async def read_maker_stream(
         logger.error(f"MakerStream read loop error: {e}")
 
 
-async def read_quote_stream(call, queue: asyncio.Queue) -> None:
-    """Background task: read StreamQuote responses and dispatch quotes to queue."""
+async def read_taker_stream(call, queue: asyncio.Queue) -> None:
+    """Background task: read TakerStream responses and dispatch typed events to queue."""
     try:
-        async for resp in call:
-            quote = resp.quote
-            logger.info(
-                "QuoteStream: rfq_id=%s price=%s from %s op=%s",
-                quote.rfq_id,
-                quote.price,
-                quote.maker,
-                resp.stream_operation,
-            )
-            await queue.put(("quote", quote))
+        while True:
+            resp = await call.read()
+            if resp == grpc.aio.EOF:
+                logger.info("TakerStream EOF")
+                break
+            msg_type = resp.message_type
+            if msg_type == "pong":
+                continue
+            if msg_type == "quote":
+                quote = resp.quote
+                logger.info(
+                    "TakerStream: quote rfq_id=%s price=%s from %s",
+                    quote.rfq_id,
+                    quote.price,
+                    quote.maker,
+                )
+                await queue.put(("quote", quote))
+            elif msg_type == "request_ack":
+                ack = resp.request_ack
+                logger.info(f"TakerStream: request_ack RFQ#{ack.rfq_id} status={ack.status}")
+                await queue.put(("request_ack", ack))
+            elif msg_type == "error":
+                logger.error(f"TakerStream: error {resp.error.code}: {resp.error.message_}")
+                await queue.put(("error", resp.error))
+            else:
+                logger.warning(f"TakerStream: unhandled msg_type={msg_type!r}")
     except grpc.aio.AioRpcError as e:
-        logger.error(f"StreamQuote gRPC error: {e.code()}: {e.details()}")
+        logger.error(f"TakerStream gRPC error: {e.code()}: {e.details()}")
         await queue.put(("error", e))
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        logger.error(f"StreamQuote read loop error: {e}")
+        logger.error(f"TakerStream read loop error: {e}")
 
 
 async def ping_loop(send_queue: asyncio.Queue, make_ping, interval: float = PING_INTERVAL) -> None:
@@ -596,23 +611,22 @@ async def main():
         ("subscribe_to_quotes_updates", "true"),
         ("subscribe_to_settlement_updates", "true"),
     )
+    taker_metadata = (("request_address", retail_wallet.inj_address),)
     print(f"   [debug] maker metadata: {maker_metadata}")
+    print(f"   [debug] taker metadata: {taker_metadata}")
 
     # Per-stream queues: _send for outbound messages, _recv for dispatched events.
-    quote_recv_q: asyncio.Queue = asyncio.Queue()
+    taker_send_q: asyncio.Queue = asyncio.Queue()
+    taker_recv_q: asyncio.Queue = asyncio.Queue()
     maker_send_q: asyncio.Queue = asyncio.Queue()
     maker_recv_q: asyncio.Queue = asyncio.Queue()
 
-    # Pre-queue the initial ping so the first yielded maker message carries
-    # data alongside the HEADERS frame.
+    # Pre-queue the initial ping on each stream so the first yielded message
+    # carries data alongside the HEADERS frame.
     await maker_send_q.put(MakerStreamStreamingRequest(message_type="ping"))
+    await taker_send_q.put(TakerStreamStreamingRequest(message_type="ping"))
 
-    quote_call = stub.StreamQuote(
-        StreamQuoteRequest(
-            addresses=[retail_wallet.inj_address],
-            market_ids=[market.id],
-        )
-    )
+    taker_call = stub.TakerStream(_request_iter(taker_send_q), metadata=taker_metadata)
     maker_call = stub.MakerStream(_request_iter(maker_send_q), metadata=maker_metadata)
 
     # Start background reader tasks
@@ -625,13 +639,23 @@ async def main():
             contract_address,
         )
     )
-    quote_reader = asyncio.create_task(read_quote_stream(quote_call, quote_recv_q))
+    taker_reader = asyncio.create_task(read_taker_stream(taker_call, taker_recv_q))
 
-    # Keep MakerStream alive for maker-scoped request/update delivery.
+    # Keep both streams alive with periodic application-level pings.
     maker_pinger = asyncio.create_task(ping_loop(maker_send_q, MakerStreamStreamingRequest))
+    taker_pinger = asyncio.create_task(ping_loop(taker_send_q, TakerStreamStreamingRequest))
 
     print("   ✅ MM connected to MakerStream (quote + settlement updates subscribed)")
-    print("   ✅ Retail subscribed to StreamQuote")
+    print("   ✅ Retail connected to TakerStream")
+
+    async def shutdown_streams() -> None:
+        maker_pinger.cancel()
+        taker_pinger.cancel()
+        await maker_send_q.put(_STREAM_CLOSE)
+        await taker_send_q.put(_STREAM_CLOSE)
+        maker_reader.cancel()
+        taker_reader.cancel()
+        await channel.close()
 
     # Drain stale messages from live testnet traffic
     await asyncio.sleep(3)
@@ -642,28 +666,46 @@ async def main():
     client_id = str(uuid.uuid4())
     expiry_ms = int(time.time() * 1000) + 300_000
 
-    create_rfq = RFQRequestInputType(
+    create_rfq = CreateRFQRequestType(
         client_id=client_id,
         market_id=market.id,
         direction="long",
         margin=margin,
         quantity=quantity,
         worst_price=str(worst_price),
-        request_address=retail_wallet.inj_address,
         expiry=expiry_ms,
     )
 
     print(f"\n   📤 Retail sending request (client_id={client_id})...")
-    try:
-        request_resp = await stub.Request(RequestRequest(request=create_rfq))
-        rfq_id = int(request_resp.rfq_id)
-        print(f"   📬 Request ACK received: RFQ#{rfq_id} status={request_resp.status}")
-    except grpc.aio.AioRpcError as e:
-        print(f"   ❌ Request RPC failed: {e.code()}: {e.details()}")
-        maker_pinger.cancel()
-        maker_reader.cancel()
-        quote_reader.cancel()
-        await channel.close()
+    await taker_send_q.put(
+        TakerStreamStreamingRequest(message_type="request", request=create_rfq)
+    )
+
+    rfq_id: int | None = None
+    ack_deadline = time.monotonic() + 10.0
+    while time.monotonic() < ack_deadline and rfq_id is None:
+        try:
+            event_type, data = await asyncio.wait_for(taker_recv_q.get(), timeout=2.0)
+        except asyncio.TimeoutError:
+            continue
+        if event_type == "request_ack":
+            rfq_id = int(data.rfq_id)
+            print(f"   📬 Request ACK received: RFQ#{rfq_id} status={data.status}")
+        elif event_type == "error":
+            if isinstance(data, grpc.aio.AioRpcError):
+                print(f"   ❌ TakerStream RPC failed: {data.code()}: {data.details()}")
+            else:
+                print(f"   ❌ TakerStream error: {data.code}: {data.message_}")
+            await shutdown_streams()
+            return
+        else:
+            # Defer other event types (e.g., early quotes) for later consumers.
+            await taker_recv_q.put((event_type, data))
+            await asyncio.sleep(0)
+
+    if rfq_id is None:
+        print("   ❌ Timed out waiting for request_ack")
+        await shutdown_streams()
         return
 
     # Run MM and retail concurrently
@@ -683,25 +725,19 @@ async def main():
     )
 
     print(f"   ⏳ Retail collecting quotes (45s window)...")
-    quotes = await collect_quotes(quote_recv_q, rfq_id, timeout=45, min_quotes=1)
+    quotes = await collect_quotes(taker_recv_q, rfq_id, timeout=45, min_quotes=1)
 
     sent_quote = await mm_task
 
     if not quotes or not sent_quote:
         print("   ❌ No quotes received. Aborting.")
-        maker_pinger.cancel()
-        maker_reader.cancel()
-        quote_reader.cancel()
-        await channel.close()
+        await shutdown_streams()
         return
 
     matching_quotes = [q for q in quotes if q["maker"] == mm_wallet.inj_address]
     if not matching_quotes:
         print(f"   ❌ Retail got {len(quotes)} quote(s), but none from MM {mm_wallet.inj_address}")
-        maker_pinger.cancel()
-        maker_reader.cancel()
-        quote_reader.cancel()
-        await channel.close()
+        await shutdown_streams()
         return
 
     best_quote = matching_quotes[0]
@@ -787,12 +823,7 @@ async def main():
         print(f"\n   ❌ SETTLEMENT FAILED: {e}")
         logger.exception("Settlement error:")
     finally:
-        maker_pinger.cancel()
-        # Signal stream iterators to close
-        await maker_send_q.put(_STREAM_CLOSE)
-        maker_reader.cancel()
-        quote_reader.cancel()
-        await channel.close()
+        await shutdown_streams()
         print("   📡 gRPC channel closed")
 
     print("\n" + "=" * 60)
