@@ -47,8 +47,10 @@ class QuoteFactory:
             request: The RFQ request being quoted
             evm_chain_id: EVM chain ID for the EIP-712 domain (testnet=1439)
             contract_address: RFQ contract bech32 address (verifying contract)
-            chain_id: Cosmos chain_id, included in the wire payload only.
-                The v2 signature does NOT bind it (the domain separator does).
+            chain_id: Cosmos chain_id (`injective-888` testnet, `injective-1`
+                mainnet), included in the wire payload only. Do not pass the
+                EVM chain ID here; `1439` / `1776` belongs in `evm_chain_id`
+                and the v2 domain separator.
             price: Quote price (defaults to market price if available)
             margin: Maker margin (defaults to taker margin)
             quantity: Maker quantity (defaults to taker quantity)

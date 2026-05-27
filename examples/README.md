@@ -100,7 +100,8 @@ See `.env.example` for required configuration:
 | `ADMIN_PRIVATE_KEY` | Contract admin's private key (hex) |
 | `MM_PRIVATE_KEY` | Market maker's private key (hex) |
 | `CONTRACT_ADDRESS` | RFQ contract address |
-| `CHAIN_ID` | Injective chain ID |
+| `CHAIN_ID` | Cosmos chain ID for transactions and RFQ wire payloads (`injective-888` testnet, `injective-1` mainnet); not the numeric EVM chain ID |
+| `EVM_CHAIN_ID` | EIP-712 domain chain ID for quote signatures (`1439` testnet, `1776` mainnet) |
 | `GRPC_ENDPOINT` | gRPC endpoint (e.g. `localhost:9910`) — required for gRPC examples |
 | `RFQ_CONTRACT_ADDRESS` | Override RFQ contract address for config-driven Python examples |
 | `RFQ_ENV` | Environment to load: `local`, `testnet`, or `mainnet` |

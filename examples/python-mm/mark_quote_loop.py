@@ -166,7 +166,7 @@ async def _send_quote(
 
     return await client.send_quote(
         {
-            "chain_id": chain_id,
+            "chain_id": chain_id,  # Cosmos chain ID; mainnet="injective-1" (not 1776)
             "contract_address": contract_address,
             "rfq_id": int(request["rfq_id"]),
             "market_id": request["market_id"],
@@ -179,7 +179,7 @@ async def _send_quote(
             "taker": taker,
             "signature": signature,
             "sign_mode": "v2",
-            "evm_chain_id": evm_chain_id,
+            "evm_chain_id": evm_chain_id,  # EIP-712 chain ID; mainnet=1776
             "maker_subaccount_nonce": maker_subaccount_nonce,
         },
         wait_for_response=True,

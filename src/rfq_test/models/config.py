@@ -14,7 +14,7 @@ class ChainConfig(BaseModel):
     lcd_endpoint: str
     chain_id: str
     # EVM chain ID used in the EIP-712 v2 domain separator. NOT the cosmos
-    # chain_id — testnet is 1439, mainnet is 1776.
+    # chain_id; testnet EVM ID is 1439, mainnet EVM ID is 1776.
     evm_chain_id: int
     tx_timeout_seconds: int = 5
     # Optional gRPC endpoints (pyinjective). If unset, code uses grpc_endpoint for all to avoid "dns:///" noise.

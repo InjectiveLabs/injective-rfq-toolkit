@@ -8,6 +8,8 @@ chain:
   chain_stream_endpoint: "sentry.chain.stream.injective.network:443"
   lcd_endpoint: "https://sentry.lcd.injective.network"
   chain_id: "injective-1"
+  # EVM chain ID for the EIP-712 v2 domain separator (NOT the cosmos chain_id).
+  # Testnet is 1439; mainnet is 1776.
   evm_chain_id: 1776
   tx_timeout_seconds: 20
 

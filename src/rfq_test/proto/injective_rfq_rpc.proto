@@ -121,7 +121,8 @@ message QuoteRequest {
 }
 // RFQ quote
 message RFQQuoteType {
-  // Chain ID
+  // Cosmos chain ID, e.g. "injective-888" on testnet or "injective-1" on
+  // mainnet. Do not put the EVM chain ID here; use evm_chain_id for EIP-712.
   string chain_id = 1;
   // Contract address
   string contract_address = 2;
@@ -167,8 +168,9 @@ message RFQQuoteType {
   string client_id = 22;
   // Signature scheme used for the quote. Required: "v2" (EIP-712).
   string sign_mode = 23;
-  // EVM chain ID embedded in the EIP-712 domain. Required when sign_mode is
-  // "v2". Must match one of the indexer's configured chain IDs.
+  // EVM chain ID embedded in the EIP-712 domain (1439 testnet, 1776 mainnet).
+  // Required when sign_mode is "v2". Must match one of the indexer's
+  // configured EVM chain IDs.
   uint64 evm_chain_id = 24;
 }
 // Expiry with timestamp and block height
@@ -205,7 +207,8 @@ message RFQProcessedQuoteType {
   string executed_quantity = 51;
   // Executed margin for the quote, if successful
   string executed_margin = 52;
-  // Chain ID
+  // Cosmos chain ID, e.g. "injective-888" on testnet or "injective-1" on
+  // mainnet. Do not put the EVM chain ID here; use evm_chain_id for EIP-712.
   string chain_id = 1;
   // Contract address
   string contract_address = 2;
@@ -251,8 +254,9 @@ message RFQProcessedQuoteType {
   string client_id = 22;
   // Signature scheme used for the quote. Required: "v2" (EIP-712).
   string sign_mode = 23;
-  // EVM chain ID embedded in the EIP-712 domain. Required when sign_mode is
-  // "v2". Must match one of the indexer's configured chain IDs.
+  // EVM chain ID embedded in the EIP-712 domain (1439 testnet, 1776 mainnet).
+  // Required when sign_mode is "v2". Must match one of the indexer's
+  // configured EVM chain IDs.
   uint64 evm_chain_id = 24;
 }
 
@@ -342,7 +346,7 @@ message CreateConditionalOrderRequest {
   // Hex-encoded 65-byte ECDSA recoverable signature (r‖s‖v). To produce:
   // build the EIP-712 v2 SignedTakerIntent digest with these fields:
   // version              (uint8)   — protocol version
-  // chain_id             (string)  — e.g. "injective-1"
+  // chain_id             (string)  — Cosmos chain ID, e.g. "injective-1"
   // contract_address     (string)  — RFQ contract bech32 address
   // taker               (string)  — taker bech32 address
   // epoch               (uint64)  — taker's current epoch
@@ -365,15 +369,16 @@ message CreateConditionalOrderRequest {
   string signature = 2;
   // Signature scheme used for the conditional order. Required: "v2" (EIP-712).
   string sign_mode = 3;
-  // EVM chain ID embedded in the EIP-712 domain. Required when sign_mode is
-  // "v2". Must match one of the indexer's configured chain IDs.
+  // EVM chain ID embedded in the EIP-712 domain (1439 testnet, 1776 mainnet).
+  // Required when sign_mode is "v2". Must match one of the indexer's
+  // configured EVM chain IDs.
   uint64 evm_chain_id = 4;
 }
 // Conditional order input matching the contract's SignedTakerIntent payload
 message ConditionalOrderInput {
   // Protocol version
   uint32 version = 1;
-  // Chain ID (e.g. injective-1)
+  // Cosmos chain ID (e.g. injective-1); not the EVM chain ID.
   string chain_id = 2;
   // RFQ contract address
   string contract_address = 3;

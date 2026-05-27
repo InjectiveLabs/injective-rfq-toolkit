@@ -207,8 +207,9 @@ class MarketMaker:
             min_fill_quantity=min_fill_quantity,
         )
 
-        # Build quote payload (indexer expects chain_id, contract_address, and
-        # sign_mode — see indexer swagger).
+        # Build quote payload. chain_id is the Cosmos chain ID
+        # ("injective-888" / "injective-1"); evm_chain_id is the numeric
+        # EIP-712 domain chainId (1439 / 1776).
         quote_data = {
             "rfq_id": rfq_id,
             "market_id": market_id,

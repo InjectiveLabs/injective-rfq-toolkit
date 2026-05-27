@@ -375,11 +375,14 @@ class TakerStreamClient(BaseStreamClient):
         """Send a conditional order (TP/SL) via the TakerStream.
 
         Args:
-            order_body: Dict with the conditional order fields — version, chain_id,
-                contract_address, taker, epoch, rfq_id, market_id, subaccount_nonce,
-                lane_version, deadline_ms, direction, quantity, margin, worst_price,
-                min_total_fill_quantity, trigger_type, trigger_price, unfilled_action,
-                cid, allowed_relayer.
+            order_body: Dict with the conditional order fields — version,
+                chain_id, contract_address, taker, epoch, rfq_id, market_id,
+                subaccount_nonce, lane_version, deadline_ms, direction,
+                quantity, margin, worst_price, min_total_fill_quantity,
+                trigger_type, trigger_price, unfilled_action, cid,
+                allowed_relayer. `chain_id` is the Cosmos chain ID
+                (`injective-888` testnet, `injective-1` mainnet), not the
+                numeric EVM chain ID.
             signature: Hex-encoded secp256k1 signature from
                 `sign_conditional_order_v2()` (with or without 0x prefix — 0x is
                 added automatically).
@@ -877,6 +880,11 @@ class MakerStreamClient(BaseStreamClient):
         treat the quote as not accepted by the taker. When the taker accepts
         and settlement is attempted, the maker receives settlement_update with
         the trade result or failure.
+
+        `quote_data["chain_id"]` is the Cosmos chain ID (`injective-888`
+        testnet, `injective-1` mainnet). Do not put the numeric EVM chain ID
+        there; use `quote_data["evm_chain_id"]` for the EIP-712 chain ID
+        (`1439` testnet, `1776` mainnet).
         
         Args:
             quote_data: Quote parameters including signature

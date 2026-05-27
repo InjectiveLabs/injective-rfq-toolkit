@@ -56,9 +56,9 @@ const InjectiveRfqRPC = (proto.injective_rfq_rpc as any).InjectiveRfqRPC;
 
 const GRPC_ENDPOINT = process.env.GRPC_ENDPOINT!;
 const MM_PRIVATE_KEY = process.env.MM_PRIVATE_KEY!;
-const CHAIN_ID = process.env.CHAIN_ID!;
+const CHAIN_ID = process.env.CHAIN_ID!; // Cosmos chain ID: injective-888 / injective-1
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
-const EVM_CHAIN_ID = Number(process.env.EVM_CHAIN_ID ?? "1439"); // 1439 testnet, 1776 mainnet
+const EVM_CHAIN_ID = Number(process.env.EVM_CHAIN_ID ?? "1439"); // EIP-712 chain ID: 1439 testnet, 1776 mainnet
 
 const MAKER_ADDRESS = PrivateKey.fromHex(
   MM_PRIVATE_KEY.replace(/^0x/, "")
@@ -130,7 +130,7 @@ function sendQuote(stream: grpc.ClientDuplexStream<any, any>, request: any, pric
   });
 
   const quote = {
-    chain_id: CHAIN_ID,
+    chain_id: CHAIN_ID, // Cosmos chain ID; mainnet is "injective-1" (not 1776)
     contract_address: CONTRACT_ADDRESS,
     rfq_id: Number(request.rfq_id),
     market_id: request.market_id,
@@ -143,7 +143,7 @@ function sendQuote(stream: grpc.ClientDuplexStream<any, any>, request: any, pric
     taker: request.request_address,
     signature,
     sign_mode: "v2",                       // required by indexer
-    evm_chain_id: EVM_CHAIN_ID,
+    evm_chain_id: EVM_CHAIN_ID, // EIP-712 chain ID; mainnet is 1776
     maker_subaccount_nonce: makerSubaccountNonce,
   };
 
