@@ -47,6 +47,7 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
     RFQQuoteType,
 )
 from rfq_test.proto.injective_rfq_rpc_pb2_grpc import InjectiveRfqRPCStub
+from chain_settlement import stream_maker_settlements
 
 dotenv.load_dotenv()
 
@@ -283,11 +284,21 @@ async def send_quote(
     )
 
 
+def print_settlement_update(settlement) -> None:
+    print(f"⚖️  Settlement: rfq_id={settlement.rfq_id} cid={settlement.cid}")
+    for quote in settlement.quotes:
+        print(
+            f"   quote: maker={quote.maker} price={quote.price} "
+            f"status={quote.status}"
+        )
+
+
 async def main():
     grpc_endpoint = must_env("GRPC_ENDPOINT")
     mm_pk = must_env("MM_PRIVATE_KEY")
     contract_address = must_env("CONTRACT_ADDRESS")
     chain_id = must_env("CHAIN_ID")
+    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
 
     eth_addr = eth_address_from_private_key(mm_pk)
     maker_addr = eth_to_inj_address(eth_addr)
@@ -295,6 +306,9 @@ async def main():
     print("🔌 Connecting to gRPC MakerStream...")
     print(f"   Endpoint: {grpc_endpoint}")
     print(f"   Maker:    {maker_addr}")
+    if comet_bft_endpoint:
+        print("🔌 Subscribing to cometBFT chain...")
+        print(f"   Endpoint: {comet_bft_endpoint}")
 
     # Connect — use SSL for remote endpoints, insecure for localhost
     if is_loopback_target(grpc_endpoint):
@@ -323,12 +337,40 @@ async def main():
 
     # Start background ping loop
     pinger = asyncio.create_task(ping_loop(send_queue))
+    settlement_queue: asyncio.Queue = asyncio.Queue()
+    settlement_task: asyncio.Task | None = None
+    if comet_bft_endpoint:
+        settlement_task = asyncio.create_task(
+            stream_maker_settlements(
+                comet_bft_endpoint,
+                contract_address,
+                maker_addr,
+                settlement_queue,
+            )
+        )
 
     print("📡 MM connected — listening for RFQ requests...\n")
 
     try:
+        stream_read = asyncio.create_task(stream.read())
+        settlement_read = (
+            asyncio.create_task(settlement_queue.get())
+            if comet_bft_endpoint
+            else None
+        )
         while True:
-            resp = await stream.read()
+            pending = [stream_read]
+            if settlement_read is not None:
+                pending.append(settlement_read)
+            done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+
+            if settlement_read is not None and settlement_read in done:
+                print_settlement_update(settlement_read.result())
+                settlement_read = asyncio.create_task(settlement_queue.get())
+                continue
+
+            resp = stream_read.result()
+            stream_read = asyncio.create_task(stream.read())
             if resp == grpc.aio.EOF:
                 print("🔌 MakerStream EOF")
                 break
@@ -398,13 +440,7 @@ async def main():
                 )
 
             elif msg_type == "settlement_update":
-                s = resp.settlement
-                print(f"⚖️  Settlement: rfq_id={s.rfq_id} cid={s.cid}")
-                for q in s.quotes:
-                    print(
-                        f"   quote: maker={q.maker} price={q.price} "
-                        f"status={q.status}"
-                    )
+                print_settlement_update(resp.settlement)
 
             elif msg_type == "error":
                 e = resp.error
@@ -419,6 +455,8 @@ async def main():
         pass
     finally:
         pinger.cancel()
+        if settlement_task is not None:
+            settlement_task.cancel()
         await send_queue.put(_STREAM_CLOSE)
         await channel.close()
         print("🔌 gRPC channel closed")

@@ -34,6 +34,7 @@ from rfq_test.config import get_environment_config, get_settings
 from rfq_test.crypto.eip712 import sign_quote_v2
 from rfq_test.crypto.wallet import Wallet
 from rfq_test.exceptions import IndexerTimeoutError, IndexerValidationError
+from chain_settlement import stream_maker_settlements
 
 
 def _env_private_key() -> str:
@@ -114,6 +115,32 @@ async def quote_request(
     )
 
 
+async def print_chain_settlements(
+    endpoint: str,
+    contract_address: str,
+    maker_address: str,
+) -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    subscriber = asyncio.create_task(
+        stream_maker_settlements(endpoint, contract_address, maker_address, queue)
+    )
+    try:
+        while True:
+            settlement = await queue.get()
+            print(
+                "Settlement update:",
+                f"rfq_id={settlement.rfq_id}",
+                f"taker={settlement.taker}",
+                f"direction={settlement.direction}",
+                f"quantity={settlement.quantity}",
+                f"margin={settlement.margin}",
+                f"cid={settlement.cid}",
+                f"quotes={[q.maker for q in settlement.quotes]}",
+            )
+    finally:
+        subscriber.cancel()
+
+
 async def main() -> None:
     config = get_environment_config()
     mm_private_key = _env_private_key()
@@ -130,12 +157,16 @@ async def main() -> None:
         or str(default_evm_chain_id)
     )
     ws_endpoint = os.getenv("RFQ_WS_URL") or config.indexer.ws_endpoint
+    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
 
     print("Connecting to MakerStream")
     print(f"  endpoint: {ws_endpoint}/MakerStream")
     print(f"  maker:    {wallet.inj_address}")
     print(f"  chain:    {chain_id}")
     print(f"  contract: {contract_address}")
+    if comet_bft_endpoint:
+        print("Subscribing to cometBFT chain")
+        print(f"  endpoint: {comet_bft_endpoint}")
 
     async with MakerStreamClient(
         ws_endpoint,
@@ -147,36 +178,51 @@ async def main() -> None:
         auth_contract_address=contract_address,
         timeout=30.0,
     ) as client:
+        settlement_task = (
+            asyncio.create_task(
+                print_chain_settlements(
+                    comet_bft_endpoint,
+                    contract_address,
+                    wallet.inj_address,
+                )
+            )
+            if comet_bft_endpoint
+            else None
+        )
         print("Connected. Waiting for RFQ requests.")
 
-        while True:
-            try:
-                request = await client.wait_for_request(timeout=60.0)
-            except IndexerTimeoutError:
-                print("No RFQ requests in the last 60s; still listening.")
-                continue
+        try:
+            while True:
+                try:
+                    request = await client.wait_for_request(timeout=60.0)
+                except IndexerTimeoutError:
+                    print("No RFQ requests in the last 60s; still listening.")
+                    continue
 
-            print(
-                "RFQ request:",
-                f"rfq_id={request['rfq_id']}",
-                f"market={request['market_id']}",
-                f"direction={request['direction']}",
-                f"margin={request['margin']}",
-                f"quantity={request['quantity']}",
-                f"worst_price={request['worst_price']}",
-            )
-
-            try:
-                await quote_request(
-                    client=client,
-                    request=request,
-                    wallet=wallet,
-                    chain_id=chain_id,
-                    contract_address=contract_address,
-                    evm_chain_id=evm_chain_id,
+                print(
+                    "RFQ request:",
+                    f"rfq_id={request['rfq_id']}",
+                    f"market={request['market_id']}",
+                    f"direction={request['direction']}",
+                    f"margin={request['margin']}",
+                    f"quantity={request['quantity']}",
+                    f"worst_price={request['worst_price']}",
                 )
-            except IndexerValidationError as exc:
-                print(f"Quote rejected by indexer: {exc}")
+
+                try:
+                    await quote_request(
+                        client=client,
+                        request=request,
+                        wallet=wallet,
+                        chain_id=chain_id,
+                        contract_address=contract_address,
+                        evm_chain_id=evm_chain_id,
+                    )
+                except IndexerValidationError as exc:
+                    print(f"Quote rejected by indexer: {exc}")
+        finally:
+            if settlement_task is not None:
+                settlement_task.cancel()
 
 
 if __name__ == "__main__":

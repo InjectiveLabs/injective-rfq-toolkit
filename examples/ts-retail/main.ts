@@ -25,6 +25,7 @@ import {
 } from "@injectivelabs/sdk-ts";
 import { Network, getNetworkEndpoints } from "@injectivelabs/networks";
 import { ChainId } from "@injectivelabs/ts-types";
+import { ChainSettlement, streamChainSettlements } from "./chain-settlement.js";
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ const INJUSDT_MARKET_ID =
 
 // Contract
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
+const CHAIN_COMETBFT_ENDPOINT = process.env.CHAIN_COMETBFT_ENDPOINT;
 
 // Retail user
 const TAKER_ADDRESS =
@@ -194,6 +196,32 @@ function normalizeExpiry(expiry: any): Expiry {
   };
 }
 
+function printSettlement(settlement: Settlement | ChainSettlement) {
+  const results = (settlement as any).results as {
+    q: string;
+    m: string;
+    e?: string;
+    error?: string;
+  }[];
+  const filledQuantity = (results || []).reduce(
+    (sum, r) => (r.e || r.error ? sum : sum + parseFloat(r.q || "0")),
+    0,
+  );
+  const usedMargin = (results || []).reduce(
+    (sum, r) => (r.e || r.error ? sum : sum + parseFloat(r.m || "0")),
+    0,
+  );
+
+  console.table({
+    "Original Order": { margin: settlement.margin, quantity: settlement.quantity },
+    "Filled": { margin: usedMargin, quantity: filledQuantity },
+    "Fallback Order": {
+      margin: settlement.fallback_margin,
+      quantity: settlement.fallback_quantity,
+    },
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /*                              RFQ OPERATIONS                                */
 /* -------------------------------------------------------------------------- */
@@ -315,7 +343,18 @@ async function acceptQuote(worst_price: number, rfqId: number, request: RfqReque
 /* -------------------------------------------------------------------------- */
 
 retailWs = new WebSocket(WS_URL);
-settlementWs = new WebSocket(WS_URL);  
+if (CHAIN_COMETBFT_ENDPOINT) {
+  console.log("🔌 Subscribing to cometBFT chain...");
+  console.log("   Endpoint:", CHAIN_COMETBFT_ENDPOINT);
+  streamChainSettlements({
+    endpoint: CHAIN_COMETBFT_ENDPOINT,
+    contractAddress: CONTRACT_ADDRESS,
+    onSettlement: printSettlement,
+    onError: (err) => console.error("❌ CometBFT settlement error:", err),
+  });
+} else {
+  settlementWs = new WebSocket(WS_URL);
+}
 
 retailWs.on("open", () => {
   console.log("🔌 Retail WebSocket connected");
@@ -427,7 +466,7 @@ retailWs.on("close", () => {
   console.log("🔌 WebSocket closed");
 });
 
-settlementWs.on("open", () => {
+settlementWs?.on("open", () => {
   console.log("🔌 Settlement WebSocket connected");
 
   settlementWs!.send(
@@ -445,30 +484,16 @@ settlementWs.on("open", () => {
   console.log("📡 Subscribed to settlement stream");
 })
 
-settlementWs.on("message", (data) => {
+settlementWs?.on("message", (data) => {
   const msg: WebSocketMessage = JSON.parse(data.toString());
   if (!msg.result?.settlement) return;
-  
-  const settlement = msg.result.settlement as any;
-  const results = settlement.results as { 
-    q: string; 
-    m: string; 
-    e?: string 
-  }[];
-  const filledQuantity = results.reduce((sum, r) => r.e ? sum : sum + parseFloat(r.q), 0);
-  const usedMargin = results.reduce((sum, r) => r.e ? sum : sum + parseFloat(r.m), 0);
-
-  console.table({
-    "Original Order": { margin: settlement.margin, quantity: settlement.quantity },
-    "Filled": { margin: usedMargin, quantity: filledQuantity },
-    "Fallback Order": { margin: settlement.fallback_margin, quantity: settlement.fallback_quantity }
-  });
+  printSettlement(msg.result.settlement);
 });
 
-settlementWs.on("error", (err) => {
+settlementWs?.on("error", (err) => {
   console.error("❌ WebSocket error:", err);
 });
 
-settlementWs.on("close", () => {
+settlementWs?.on("close", () => {
   console.log("🔌 WebSocket closed");
 });

@@ -48,6 +48,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	"mm-scripts-go/chainsettlement"
 	pb "mm-scripts-go/proto/injective_rfq_rpc"
 )
 
@@ -345,6 +346,7 @@ func main() {
 	_ = godotenv.Load()
 
 	grpcEndpoint := mustEnv("GRPC_ENDPOINT")
+	cometBFTEndpoint := os.Getenv("CHAIN_COMETBFT_ENDPOINT")
 	mmPK := mustEnv("MM_PRIVATE_KEY")
 	contractAddr := mustEnv("CONTRACT_ADDRESS")
 	chainID := mustEnv("CHAIN_ID")
@@ -386,10 +388,18 @@ func main() {
 	}
 	defer conn.Close()
 
+	if cometBFTEndpoint != "" {
+		fmt.Println("🔌 Subscribing to cometBFT chain...")
+		fmt.Println("   Endpoint:", cometBFTEndpoint)
+	}
+
 	client := pb.NewInjectiveRfqRPCClient(conn)
 
+	baseCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Set maker metadata
-	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+	ctx := metadata.NewOutgoingContext(baseCtx, metadata.Pairs(
 		"maker_address", makerAddr,
 		"subscribe_to_quotes_updates", "true",
 		"subscribe_to_settlement_updates", "true",
@@ -413,25 +423,63 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(PING_INTERVAL)
 		defer ticker.Stop()
-		for range ticker.C {
-			sendMu.Lock()
-			if err := stream.Send(&pb.MakerStreamStreamingRequest{MessageType: "ping"}); err != nil {
-				sendMu.Unlock()
-				log.Printf("ping error: %v", err)
+		for {
+			select {
+			case <-baseCtx.Done():
 				return
+			case <-ticker.C:
+				sendMu.Lock()
+				if err := stream.Send(&pb.MakerStreamStreamingRequest{MessageType: "ping"}); err != nil {
+					sendMu.Unlock()
+					log.Printf("ping error: %v", err)
+					return
+				}
+				sendMu.Unlock()
 			}
-			sendMu.Unlock()
 		}
 	}()
+
+	respCh := make(chan *pb.MakerStreamResponse, 100)
+	errCh := make(chan error, 2)
+
+	go func() {
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				errCh <- fmt.Errorf("MakerStream recv: %w", err)
+				return
+			}
+			respCh <- resp
+		}
+	}()
+
+	if cometBFTEndpoint != "" {
+		go func() {
+			settlementCh := make(chan *pb.RFQSettlementMakerUpdate, 100)
+			go func() {
+				for settlement := range settlementCh {
+					respCh <- &pb.MakerStreamResponse{
+						MessageType: "settlement_update",
+						Settlement:  settlement,
+					}
+				}
+			}()
+			if err := chainsettlement.StreamMakerSettlements(baseCtx, cometBFTEndpoint, contractAddr, makerAddr, settlementCh); err != nil {
+				errCh <- err
+			}
+		}()
+	}
 
 	fmt.Println("📡 MM connected — listening for RFQ requests...")
 	fmt.Println()
 
 	// Read loop
 	for {
-		resp, err := stream.Recv()
-		if err != nil {
-			log.Fatalf("MakerStream recv: %v", err)
+		var resp *pb.MakerStreamResponse
+		select {
+		case err := <-errCh:
+			log.Fatal(err)
+		case resp = <-respCh:
 		}
 
 		switch resp.MessageType {

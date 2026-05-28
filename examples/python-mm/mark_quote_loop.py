@@ -41,6 +41,7 @@ from rfq_test.utils.price import (
     quantize_quantity,
     quantize_to_tick,
 )
+from chain_settlement import stream_maker_settlements
 
 
 def _direction(raw: str) -> str | None:
@@ -206,6 +207,7 @@ def _print_startup(
 ) -> None:
     chain_id, contract_address = config.signing_context
     evm_chain_id, _ = config.signing_context_v2
+    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
     print("RFQ mark quote loop")
     print(f"  env:      {config.environment}")
     print(f"  endpoint: {config.indexer.ws_endpoint}/MakerStream")
@@ -314,6 +316,8 @@ async def main() -> None:
     quotes_sent = 0
     outstanding_quotes: list[tuple[str, float, Decimal]] = []
     started_at = time.monotonic()
+    settlement_queue: asyncio.Queue = asyncio.Queue()
+    settlement_task: asyncio.Task | None = None
 
     async with MakerStreamClient(
         config.indexer.ws_endpoint,
@@ -325,175 +329,208 @@ async def main() -> None:
         auth_contract_address=contract_address,
         timeout=30.0,
     ) as client:
+        if comet_bft_endpoint:
+            print("Subscribing to cometBFT chain")
+            print(f"  endpoint: {comet_bft_endpoint}")
+            settlement_task = asyncio.create_task(
+                stream_maker_settlements(
+                    comet_bft_endpoint,
+                    contract_address,
+                    wallet.inj_address,
+                    settlement_queue,
+                )
+            )
         print("Connected. Listening for RFQs.")
-        while True:
-            runtime_elapsed = time.monotonic() - started_at
-            if args.max_runtime_seconds and runtime_elapsed >= args.max_runtime_seconds:
-                print("Max runtime reached; exiting.")
-                return
-            if args.max_quotes and quotes_sent >= args.max_quotes:
-                print("Max quote count reached; exiting.")
-                return
-
-            now = time.monotonic()
-            outstanding_quotes = [
-                (rfq_id, expires_at, qty)
-                for rfq_id, expires_at, qty in outstanding_quotes
-                if expires_at > now
-            ]
-
-            try:
-                event = await client.get_next_event(timeout=60.0)
-            except IndexerTimeoutError:
-                print("No RFQs in the last 60s; still listening.")
-                continue
-            if event is None:
-                print("No RFQs in the last 60s; still listening.")
-                continue
-
-            msg_type, data = event
-            if msg_type == "quote_update":
-                update = client._processed_quote_to_dict(data)
-                if update.get("maker") == wallet.inj_address:
+        try:
+            while True:
+                while not settlement_queue.empty():
+                    settlement = await settlement_queue.get()
                     print(
-                        "Quote update:",
-                        f"rfq_id={update['rfq_id']}",
-                        f"status={update.get('status')}",
-                        f"executed_qty={update.get('executed_quantity')}",
-                        f"executed_margin={update.get('executed_margin')}",
-                        f"error={update.get('error')}",
+                        "Settlement update:",
+                        f"rfq_id={settlement.rfq_id}",
+                        f"taker={settlement.taker}",
+                        f"direction={settlement.direction}",
+                        f"quantity={settlement.quantity}",
+                        f"margin={settlement.margin}",
+                        f"cid={settlement.cid}",
+                        f"quotes={[q.maker for q in settlement.quotes]}",
                     )
-                    if update.get("status", "").lower() != "pending":
-                        outstanding_quotes = [
-                            item for item in outstanding_quotes if item[0] != update["rfq_id"]
-                        ]
-                continue
+                    outstanding_quotes = [
+                        item for item in outstanding_quotes if item[0] != str(settlement.rfq_id)
+                    ]
 
-            if msg_type == "settlement_update":
-                settlement = client._settlement_to_dict(data)
-                print(
-                    "Settlement update:",
-                    f"rfq_id={settlement['rfq_id']}",
-                    f"taker={settlement['taker']}",
-                    f"direction={settlement['direction']}",
-                    f"quantity={settlement['quantity']}",
-                    f"margin={settlement['margin']}",
-                    f"cid={settlement['cid']}",
-                    f"quotes={settlement['quotes']}",
-                )
+                runtime_elapsed = time.monotonic() - started_at
+                if args.max_runtime_seconds and runtime_elapsed >= args.max_runtime_seconds:
+                    print("Max runtime reached; exiting.")
+                    return
+                if args.max_quotes and quotes_sent >= args.max_quotes:
+                    print("Max quote count reached; exiting.")
+                    return
+
+                now = time.monotonic()
                 outstanding_quotes = [
-                    item for item in outstanding_quotes if item[0] != settlement["rfq_id"]
+                    (rfq_id, expires_at, qty)
+                    for rfq_id, expires_at, qty in outstanding_quotes
+                    if expires_at > now
                 ]
-                continue
 
-            if msg_type == "error":
-                print(f"Stream error: code={data.code} message={data.message_}")
-                continue
-            if msg_type != "request":
-                continue
+                try:
+                    event = await client.get_next_event(timeout=1.0 if comet_bft_endpoint else 60.0)
+                except IndexerTimeoutError:
+                    if not comet_bft_endpoint:
+                        print("No RFQs in the last 60s; still listening.")
+                    continue
+                if event is None:
+                    if not comet_bft_endpoint:
+                        print("No RFQs in the last 60s; still listening.")
+                    continue
 
-            request = client._request_to_dict(data)
-            if request.get("market_id") != market.id:
-                continue
+                msg_type, data = event
+                if msg_type == "quote_update":
+                    update = client._processed_quote_to_dict(data)
+                    if update.get("maker") == wallet.inj_address:
+                        print(
+                            "Quote update:",
+                            f"rfq_id={update['rfq_id']}",
+                            f"status={update.get('status')}",
+                            f"executed_qty={update.get('executed_quantity')}",
+                            f"executed_margin={update.get('executed_margin')}",
+                            f"error={update.get('error')}",
+                        )
+                        if update.get("status", "").lower() != "pending":
+                            outstanding_quotes = [
+                                item for item in outstanding_quotes if item[0] != update["rfq_id"]
+                            ]
+                    continue
 
-            taker = request.get("taker") or request.get("request_address") or ""
-            if args.taker_address and taker != args.taker_address:
-                continue
-
-            direction = _direction(request["direction"])
-            if not direction:
-                print(
-                    f"Skipping RFQ#{request['rfq_id']}: "
-                    f"unsupported direction={request['direction']}"
-                )
-                continue
-
-            try:
-                mark = await price_fetcher.get_price(market)
-                price_tick = price_fetcher.get_price_tick(market)
-                qty_tick = price_fetcher.get_qty_tick(market)
-                price = _quote_price(
-                    mark=mark,
-                    direction=direction,
-                    edge_bps=edge_bps,
-                    tick=price_tick,
-                    fixed_price=fixed_price,
-                )
-                raw_price = price
-                if not args.ignore_worst_price:
-                    price = _fit_price_to_worst(
-                        price,
-                        direction,
-                        request["worst_price"],
-                        price_tick,
-                    )
-
-                quantity, margin = _quote_size_and_margin(request, max_quantity, qty_tick)
-                quote_qty = Decimal(quantity)
-                outstanding_qty = sum(qty for _, _, qty in outstanding_quotes)
-                if (
-                    max_outstanding_quantity > 0
-                    and outstanding_qty + quote_qty > max_outstanding_quantity
-                ):
+                if msg_type == "settlement_update":
+                    settlement = client._settlement_to_dict(data)
                     print(
-                        "Skipping RFQ:",
-                        f"rfq_id={request['rfq_id']}",
-                        f"taker={taker}",
-                        f"outstanding_qty={outstanding_qty}",
-                        f"quote_qty={quote_qty}",
-                        f"cap={max_outstanding_quantity}",
+                        "Settlement update:",
+                        f"rfq_id={settlement['rfq_id']}",
+                        f"taker={settlement['taker']}",
+                        f"direction={settlement['direction']}",
+                        f"quantity={settlement['quantity']}",
+                        f"margin={settlement['margin']}",
+                        f"cid={settlement['cid']}",
+                        f"quotes={settlement['quotes']}",
+                    )
+                    outstanding_quotes = [
+                        item for item in outstanding_quotes if item[0] != settlement["rfq_id"]
+                    ]
+                    continue
+
+                if msg_type == "error":
+                    print(f"Stream error: code={data.code} message={data.message_}")
+                    continue
+                if msg_type != "request":
+                    continue
+
+                request = client._request_to_dict(data)
+                if request.get("market_id") != market.id:
+                    continue
+
+                taker = request.get("taker") or request.get("request_address") or ""
+                if args.taker_address and taker != args.taker_address:
+                    continue
+
+                direction = _direction(request["direction"])
+                if not direction:
+                    print(
+                        f"Skipping RFQ#{request['rfq_id']}: "
+                        f"unsupported direction={request['direction']}"
                     )
                     continue
 
-                side = "sell" if direction == "long" else "buy"
-                print(
-                    "RFQ:",
-                    f"rfq_id={request['rfq_id']}",
-                    f"taker={taker}",
-                    f"side={side}",
-                    f"request_qty={request['quantity']}",
-                    f"request_margin={request['margin']}",
-                    f"quote_qty={quantity}",
-                    f"quote_margin={margin}",
-                    f"mark={mark}",
-                    f"price={price}",
-                    f"raw_price={raw_price}",
-                    f"worst={request['worst_price']}",
-                )
-
-                send_started = time.monotonic()
-                ack = await _send_quote(
-                    client=client,
-                    wallet=wallet,
-                    request=request,
-                    chain_id=chain_id,
-                    contract_address=contract_address,
-                    evm_chain_id=evm_chain_id,
-                    price=price,
-                    quantity=quantity,
-                    margin=margin,
-                    quote_validity_ms=args.quote_validity_ms,
-                    maker_subaccount_nonce=args.maker_subaccount_nonce,
-                )
-                quotes_sent += 1
-                outstanding_quotes.append(
-                    (
-                        str(request["rfq_id"]),
-                        time.monotonic() + args.quote_validity_ms / 1000,
-                        quote_qty,
+                try:
+                    mark = await price_fetcher.get_price(market)
+                    price_tick = price_fetcher.get_price_tick(market)
+                    qty_tick = price_fetcher.get_qty_tick(market)
+                    price = _quote_price(
+                        mark=mark,
+                        direction=direction,
+                        edge_bps=edge_bps,
+                        tick=price_tick,
+                        fixed_price=fixed_price,
                     )
-                )
-                ack_ms = (time.monotonic() - send_started) * 1000
-                print(
-                    "Quote ACK:",
-                    f"rfq_id={request['rfq_id']}",
-                    f"status={ack.get('status') if ack else 'unknown'}",
-                    f"ack_ms={ack_ms:.1f}",
-                )
-            except IndexerValidationError as exc:
-                print(f"Quote rejected: rfq_id={request['rfq_id']} error={exc}")
-            except Exception as exc:
-                print(f"Quote failed: rfq_id={request['rfq_id']} error={exc}")
+                    raw_price = price
+                    if not args.ignore_worst_price:
+                        price = _fit_price_to_worst(
+                            price,
+                            direction,
+                            request["worst_price"],
+                            price_tick,
+                        )
+
+                    quantity, margin = _quote_size_and_margin(request, max_quantity, qty_tick)
+                    quote_qty = Decimal(quantity)
+                    outstanding_qty = sum(qty for _, _, qty in outstanding_quotes)
+                    if (
+                        max_outstanding_quantity > 0
+                        and outstanding_qty + quote_qty > max_outstanding_quantity
+                    ):
+                        print(
+                            "Skipping RFQ:",
+                            f"rfq_id={request['rfq_id']}",
+                            f"taker={taker}",
+                            f"outstanding_qty={outstanding_qty}",
+                            f"quote_qty={quote_qty}",
+                            f"cap={max_outstanding_quantity}",
+                        )
+                        continue
+
+                    side = "sell" if direction == "long" else "buy"
+                    print(
+                        "RFQ:",
+                        f"rfq_id={request['rfq_id']}",
+                        f"taker={taker}",
+                        f"side={side}",
+                        f"request_qty={request['quantity']}",
+                        f"request_margin={request['margin']}",
+                        f"quote_qty={quote_qty}",
+                        f"quote_margin={margin}",
+                        f"mark={mark}",
+                        f"price={price}",
+                        f"raw_price={raw_price}",
+                        f"worst={request['worst_price']}",
+                    )
+
+                    send_started = time.monotonic()
+                    ack = await _send_quote(
+                        client=client,
+                        wallet=wallet,
+                        request=request,
+                        chain_id=chain_id,
+                        contract_address=contract_address,
+                        evm_chain_id=evm_chain_id,
+                        price=price,
+                        quantity=quantity,
+                        margin=margin,
+                        quote_validity_ms=args.quote_validity_ms,
+                        maker_subaccount_nonce=args.maker_subaccount_nonce,
+                    )
+                    quotes_sent += 1
+                    outstanding_quotes.append(
+                        (
+                            str(request["rfq_id"]),
+                            time.monotonic() + args.quote_validity_ms / 1000,
+                            quote_qty,
+                        )
+                    )
+                    ack_ms = (time.monotonic() - send_started) * 1000
+                    print(
+                        "Quote ACK:",
+                        f"rfq_id={request['rfq_id']}",
+                        f"status={ack.get('status') if ack else 'unknown'}",
+                        f"ack_ms={ack_ms:.1f}",
+                    )
+                except IndexerValidationError as exc:
+                    print(f"Quote rejected: rfq_id={request['rfq_id']} error={exc}")
+                except Exception as exc:
+                    print(f"Quote failed: rfq_id={request['rfq_id']} error={exc}")
+        finally:
+            if settlement_task is not None:
+                settlement_task.cancel()
 
 
 if __name__ == "__main__":
