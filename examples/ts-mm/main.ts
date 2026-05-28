@@ -31,9 +31,9 @@ const WS_URL = "ws://localhost:4464/ws";
 
 // Maker private key (used ONLY for signing quotes)
 const MM_PRIVATE_KEY = process.env.MM_PRIVATE_KEY!;
-const CHAIN_ID = process.env.CHAIN_ID!;
+const CHAIN_ID = process.env.CHAIN_ID!; // Cosmos chain ID: injective-888 / injective-1
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
-const EVM_CHAIN_ID = Number(process.env.EVM_CHAIN_ID ?? "1439"); // 1439 testnet, 1776 mainnet
+const EVM_CHAIN_ID = Number(process.env.EVM_CHAIN_ID ?? "1439"); // EIP-712 chain ID: 1439 testnet, 1776 mainnet
 
 // Derive maker address from private key
 const MAKER_ADDRESS = PrivateKey.fromHex(
@@ -125,7 +125,7 @@ async function sendQuote(
   });
 
   const quote: Quote = {
-    chain_id: CHAIN_ID,
+    chain_id: CHAIN_ID, // Cosmos chain ID; mainnet is "injective-1" (not 1776)
     contract_address: CONTRACT_ADDRESS,
     rfq_id: request.rfq_id,
     market_id: request.market_id,
@@ -138,7 +138,7 @@ async function sendQuote(
     taker: request.request_address,
     signature,
     sign_mode: "v2",
-    evm_chain_id: EVM_CHAIN_ID,
+    evm_chain_id: EVM_CHAIN_ID, // EIP-712 chain ID; mainnet is 1776
     maker_subaccount_nonce: makerSubaccountNonce,
   };
 

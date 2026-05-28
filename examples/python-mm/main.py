@@ -87,7 +87,7 @@ async def quote_request(
 
     ack = await client.send_quote(
         {
-            "chain_id": chain_id,
+            "chain_id": chain_id,  # Cosmos chain ID; mainnet="injective-1" (not 1776)
             "contract_address": contract_address,
             "market_id": request["market_id"],
             "rfq_id": int(request["rfq_id"]),
@@ -101,7 +101,7 @@ async def quote_request(
             "signature": signature,
             "maker_subaccount_nonce": 0,
             "sign_mode": "v2",
-            "evm_chain_id": evm_chain_id,
+            "evm_chain_id": evm_chain_id,  # EIP-712 chain ID; mainnet=1776
         },
         wait_for_response=True,
         response_timeout=5.0,

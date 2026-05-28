@@ -64,7 +64,7 @@ def must_env(key: str) -> str:
     return v
 
 
-EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", "1439"))   # 1439 testnet, 1776 mainnet
+EVM_CHAIN_ID = int(os.getenv("EVM_CHAIN_ID", "1439"))   # EIP-712 chain ID: 1439 testnet, 1776 mainnet
 
 
 def trim_0x(s: str) -> str:
@@ -261,7 +261,7 @@ async def send_quote(
     )
 
     quote = RFQQuoteType(
-        chain_id=chain_id,
+        chain_id=chain_id,  # Cosmos chain ID; mainnet="injective-1" (not 1776)
         contract_address=contract_address,
         rfq_id=int(request.rfq_id),
         market_id=request.market_id,
@@ -274,7 +274,7 @@ async def send_quote(
         taker=request.request_address,
         signature=sig,
         sign_mode="v2",                      # required by indexer
-        evm_chain_id=EVM_CHAIN_ID,
+        evm_chain_id=EVM_CHAIN_ID,  # EIP-712 chain ID; mainnet=1776
         maker_subaccount_nonce=0,
     )
 

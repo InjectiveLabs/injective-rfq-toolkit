@@ -155,6 +155,8 @@ domain = EIP712Domain(
 
 EVM chain ID is `1439` on testnet and `1776` on mainnet — bake it into your config, don't hardcode.
 
+The quote wire field `chain_id` is different: it remains the Cosmos chain ID (`injective-888` on testnet, `injective-1` on mainnet). Put `1439` / `1776` only in `evm_chain_id` and the EIP-712 domain.
+
 ### Type and field encoding
 
 The `SignQuote` typed-data is custom — **not** `eth_signTypedData_v4`. The indexer hand-rolls the digest. Every field is right-aligned in a 32-byte word:
@@ -337,6 +339,7 @@ Whatever path you use to send the quote (REST `/v1/quote`, MakerStream WS, or gR
 ```python
 quote = {
     # ...all the fields you signed above (chain_id/contract_address/market_id/etc)...
+    "chain_id": "injective-888",             # Cosmos chain ID; mainnet="injective-1" (never 1439/1776)
     "signature": signature,
     "sign_mode": "v2",
     "evm_chain_id": 1439,                    # 1439 testnet, 1776 mainnet
@@ -349,7 +352,7 @@ ConnectionClosedError(Close(code=1011, reason='invalid request:
   missing or unsupported sign_mode'))
 ```
 
-> **`evm_chain_id` (proto field 24) is required when `sign_mode="v2"`.** It tells the indexer which chain ID to use when reconstructing the domain separator and must match one of the indexer's configured chain IDs. The same field exists on `RFQQuoteType`, the conditional-order request, the `MakerAuth` envelope, and the indexer's `MakerChallenge` message — wherever a v2 signature appears, the chain ID rides alongside it.
+> **`evm_chain_id` (proto field 24) is required when `sign_mode="v2"`.** It tells the indexer which EVM chain ID to use when reconstructing the domain separator and must match one of the indexer's configured EVM chain IDs. The same field exists on `RFQQuoteType`, the conditional-order request, the `MakerAuth` envelope, and the indexer's `MakerChallenge` message — wherever a v2 signature appears, the EVM chain ID rides alongside it.
 
 > **`sign_mode` is mandatory.** Set `sign_mode="v2"` explicitly on every payload; omitted or empty modes fail signing-mode validation.
 
@@ -560,7 +563,7 @@ Append `/TakerStream` or `/MakerStream` to the base URL.
 - **Settlement update scope:** `settlement_update` events are sent when the taker accepts and settlement is attempted, with the trade result or failure. They are scoped to settlements that include at least one quote from `maker_address`, whether that specific quote was executed or not.
 - **Quote status meaning:** In `quote_update`, `status="accepted"` means the quote was used; `status="rejected"` means it was considered but not used.
 - **Executed fields:** In `quote_update`, `executed_quantity` and `executed_margin` are the actually filled amount and margin for that quote.
-- **Send:** Quotes as `RFQQuoteType` with fields: `chain_id`, `contract_address`, `market_id`, `rfq_id`, `taker_direction`, `margin`, `quantity`, `price`, `expiry`, `maker`, `taker`, `signature`
+- **Send:** Quotes as `RFQQuoteType` with fields: `chain_id` (Cosmos string), `contract_address`, `market_id`, `rfq_id`, `taker_direction`, `margin`, `quantity`, `price`, `expiry`, `maker`, `taker`, `signature`, `sign_mode`, and `evm_chain_id` (EIP-712 numeric chain ID)
 
 ### Proto Field Order (Quote)
 
@@ -568,7 +571,7 @@ The indexer expects a specific field order for `RFQQuoteType`. If you encode in 
 
 | Field # | Name | Type | Notes |
 |---------|------|------|------|
-| 1 | chain_id | string | Wire-only — not bound by v2 signature |
+| 1 | chain_id | string | Cosmos chain ID: `injective-888` testnet, `injective-1` mainnet. Wire-only — not bound by v2 signature. Do not pass the EVM chain ID here. |
 | 2 | contract_address | string | Wire-only — not bound by v2 signature |
 | 3 | market_id | string | |
 | 4 | rfq_id | uint64 | |
@@ -731,7 +734,7 @@ The RFQ indexer monitors mark prices and triggers the order when the condition i
 | Field | Type | Description |
 |---|---|---|
 | `version` | uint8 | Protocol version — use `1` |
-| `chain_id` | string | Cosmos chain ID (wire-only — not bound by v2 signature) |
+| `chain_id` | string | Cosmos chain ID (`injective-888` testnet, `injective-1` mainnet). Wire-only — not bound by v2 signature; do not pass the EVM chain ID here. |
 | `contract_address` | string | RFQ contract address (wire-only — bound via the v2 domain separator) |
 | `taker` | string | Taker's Injective address |
 | `epoch` | uint64 | Incremented by `CancelAllIntents`. Start at `1`; increment after each global cancel. |

@@ -177,6 +177,8 @@ pytest                   # everything except `load`
 
 YAML defaults live in `configs/{env}.yaml`; override individual fields via env vars when running against a bespoke deployment.
 
+`chain_id` / `CHAIN_ID` is always the Cosmos chain ID (`injective-888` on testnet, `injective-1` on mainnet). Do not pass the numeric EVM chain ID there; `1776` belongs only in `evm_chain_id` / `EVM_CHAIN_ID` and the EIP-712 domain.
+
 ---
 
 ## Protocol cheat-sheet
@@ -187,7 +189,7 @@ The RFQ Indexer uses **gRPC-web over WebSocket** with protobuf framing. Two stre
 - **Framing:** `[1 byte flags][4 bytes length BE][protobuf payload]`
 - **Keep-alive:** send `ping` every ~1s; the indexer drops idle streams.
 - **Signing:** **EIP-712 v2** typed-data digest → secp256k1 raw → `0x` + `r ‖ s ‖ v` (v=0/1, **not** 27/28). Custom layout, *not* `eth_signTypedData_v4`. Spec in [`crypto/eip712.py`](src/rfq_test/crypto/eip712.py); recipe in [PYTHON_BUILDING_GUIDE.md § Quote Signing (v2)](PYTHON_BUILDING_GUIDE.md#quote-signing-v2).
-- **Wire-required fields:** every quote and conditional-order create carries `sign_mode="v2"` and `evm_chain_id` (`1439` testnet, `1776` mainnet). Missing or empty values are rejected.
+- **Wire-required fields:** every quote and conditional-order create carries `sign_mode="v2"` and `evm_chain_id` (`1439` testnet, `1776` mainnet). Missing or empty values are rejected. Keep `chain_id` as the Cosmos string (`injective-888` / `injective-1`); do not put `1439` or `1776` in `chain_id`.
 - **MakerStream auth handshake:** the first server message after a maker connects is a `MakerChallenge`. Sign the `StreamAuthChallenge` typed-data and reply with `MakerAuth{evm_chain_id, signature}`. `MakerStreamClient` does this for you when you pass `auth_private_key` + `auth_evm_chain_id` + `auth_contract_address`. Standalone implementations in `examples/{python,go,ts}-mm/main-grpc.*`. Full protocol: [PYTHON_BUILDING_GUIDE.md § MakerStream Auth Handshake](PYTHON_BUILDING_GUIDE.md#makerstream-auth-handshake).
 
 ### Maker subscriptions

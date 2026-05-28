@@ -350,7 +350,8 @@ func main() {
 	mmPK := mustEnv("MM_PRIVATE_KEY")
 	contractAddr := mustEnv("CONTRACT_ADDRESS")
 	chainID := mustEnv("CHAIN_ID")
-	// EVM_CHAIN_ID for the EIP-712 v2 domain separator (1439 testnet, 1776 mainnet).
+	// CHAIN_ID is the Cosmos chain ID ("injective-888" / "injective-1").
+	// EVM_CHAIN_ID is the numeric EIP-712 v2 domain chainId (1439 / 1776).
 	evmChainID := uint64(1439)
 	if v := os.Getenv("EVM_CHAIN_ID"); v != "" {
 		parsed, err := strconv.ParseUint(v, 10, 64)
