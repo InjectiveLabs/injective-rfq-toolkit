@@ -258,7 +258,7 @@ class ChainClient:
         private_key: str,
         grantee: str,
         msg_type: str = "/cosmos.bank.v1beta1.MsgSend",
-        expire_in_seconds: int = 365 * 24 * 60 * 60,  # 1 year default
+        expire_in_seconds: Optional[int] = None,  # None => permanent grant (expiration: null)
         spend_limit_amount: str = "1000000000000000000000",  # 1000 INJ default (in smallest unit) - unused, kept for compatibility
         spend_limit_denom: str = "inj",  # unused, kept for compatibility
     ) -> str:
@@ -274,7 +274,10 @@ class ChainClient:
             private_key: Granter's private key (the MM)
             grantee: Address receiving the grant (the RFQ contract)
             msg_type: Message type to authorize (default: MsgSend for bank transfers)
-            expire_in_seconds: Grant expiration time in seconds (default: 1 year)
+            expire_in_seconds: Seconds until the grant expires. None (the default)
+                creates a PERMANENT grant (expiration: null) — what the RFQ contract
+                expects, and what stops makers from silently losing authz when a grant
+                lapses. Pass an int only if you deliberately want the grant to expire.
             spend_limit_amount: Unused, kept for compatibility
             spend_limit_denom: Unused, kept for compatibility
             
@@ -316,12 +319,16 @@ class ChainClient:
             authz_any.value = generic_authz.SerializeToString()
             
             # Create Grant
-            # According to RFQ contract requirements, grants should have NO expiration (expiration: null)
-            # Leave expiration field unset to create a permanent grant
+            # Default: NO expiration (expiration: null). Leaving the field unset creates a
+            # permanent grant that can only be revoked manually — the safest default, since
+            # makers don't silently lose authz when a grant lapses. This is also what the RFQ
+            # contract expects.
             grant = authz_pb2.Grant()
             grant.authorization.CopyFrom(authz_any)
-            # Do NOT set expiration - leave it unset to create expiration: null
-            # This creates a permanent grant that can only be revoked manually
+            if expire_in_seconds is not None:
+                # Caller explicitly opted into a finite grant lifetime.
+                import time
+                grant.expiration.FromSeconds(int(time.time()) + int(expire_in_seconds))
             
             # Create MsgGrant
             grant_msg = authz_tx_pb2.MsgGrant()
