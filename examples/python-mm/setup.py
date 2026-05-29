@@ -2,11 +2,12 @@ import asyncio
 import json
 import os
 import dotenv
-import time
 
+from google.protobuf import any_pb2
 from pyinjective.async_client_v2 import AsyncClient
 from pyinjective.core.broadcaster import MsgBroadcasterWithPk
 from pyinjective.core.network import Network
+from pyinjective.proto.cosmos.authz.v1beta1 import authz_pb2, tx_pb2 as authz_tx_pb2
 from pyinjective.wallet import PrivateKey
 
 dotenv.load_dotenv()
@@ -16,6 +17,32 @@ def must_env(key: str) -> str:
     if not v:
         raise RuntimeError(f"{key} not set")
     return v
+
+def create_grant_msg(granter: str, grantee: str, msg_type: str):
+    """Build a MsgGrant with expiration: null (a permanent grant).
+
+    composer.msg_grant_generic() requires a finite expiry, which means grants
+    silently lapse and the maker starts failing with "missing required AuthZ
+    grants". AuthZ grants can be revoked at any time, so we build the grant
+    manually and leave `expiration` unset: it stays valid until you explicitly
+    revoke it. This is also what the RFQ contract expects.
+    """
+    generic_authz = authz_pb2.GenericAuthorization()
+    generic_authz.msg = msg_type
+
+    authz_any = any_pb2.Any()
+    authz_any.type_url = "/cosmos.authz.v1beta1.GenericAuthorization"
+    authz_any.value = generic_authz.SerializeToString()
+
+    grant = authz_pb2.Grant()
+    grant.authorization.CopyFrom(authz_any)
+    # Do NOT set grant.expiration — leaving it unset creates expiration: null.
+
+    grant_msg = authz_tx_pb2.MsgGrant()
+    grant_msg.granter = granter
+    grant_msg.grantee = grantee
+    grant_msg.grant.CopyFrom(grant)
+    return grant_msg
 
 async def main():
     print("🚀 RFQ Market Maker Setup\n")
@@ -64,17 +91,12 @@ async def main():
         "/cosmos.bank.v1beta1.MsgSend",
     ]
 
-    authz_msgs = []
-
-    for msg_type in granted_msgs:
-        authz_msgs.append(
-            composer.msg_grant_generic(
-                granter=mm_addr.to_acc_bech32(),
-                grantee=CONTRACT_ADDRESS,
-                msg_type=msg_type,
-                expire_in=int(time.time() + 10*3600*24)
-            )
-        )
+    # Permanent grants (expiration: null) so the maker never silently loses authz.
+    # Revoke any time with MsgRevoke if you need to.
+    authz_msgs = [
+        create_grant_msg(mm_addr.to_acc_bech32(), CONTRACT_ADDRESS, msg_type)
+        for msg_type in granted_msgs
+    ]
 
     result = await mm_broadcaster.broadcast(authz_msgs)
     print("✅ Permissions granted")
