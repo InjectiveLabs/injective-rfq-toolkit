@@ -17,12 +17,17 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
     MakerChallenge,
     MakerStreamResponse,
     MakerStreamStreamingRequest,
+    RFQExpiryType as PbRFQExpiryType,
+    RFQSettlementMakerUpdate as PbRFQSettlementMakerUpdate,
+    RFQSettlementQuote as PbRFQSettlementQuote,
 )
 from rfq_test.proto.rfq_messages import (
     CreateRFQRequestType,
+    MakerStreamResponse as ManualMakerStreamResponse,
     RFQProcessedQuoteType,
     RFQQuoteType,
     RFQSettlementLimitActionType,
+    RFQSettlementMakerUpdate,
     RFQSettlementType,
     TakerStreamRequest,
     _encode_message,
@@ -410,3 +415,49 @@ def test_settlement_decode_preserves_unfilled_action_limit():
     assert decoded.unfilled_action.limit.price == "3.25"
     assert as_dict["unfilled_action"] == {"limit": {"price": "3.25"}}
     assert as_dict["cid"] == "cid-456"
+
+
+def test_maker_stream_response_decodes_maker_settlement_update_quotes():
+    response = MakerStreamResponse(
+        message_type="settlement_update",
+        settlement=PbRFQSettlementMakerUpdate(
+            rfq_id=456,
+            market_id="0xmarket",
+            taker="inj1taker",
+            direction="long",
+            margin="10",
+            quantity="1",
+            worst_price="3.5",
+            cid="cid-456",
+            tx_hash="0xtx",
+            quotes=[
+                PbRFQSettlementQuote(
+                    maker="inj1maker",
+                    price="3.4",
+                    quoted_margin="10",
+                    quoted_quantity="1",
+                    executed_margin="9",
+                    executed_quantity="0.9",
+                    expiry=PbRFQExpiryType(timestamp=1234567890, height=321),
+                    signature="0xsig",
+                    nonce=7,
+                    status="accepted",
+                )
+            ],
+        ),
+    )
+
+    decoded = ManualMakerStreamResponse.decode(response.SerializeToString())
+
+    assert decoded.message_type == "settlement_update"
+    assert isinstance(decoded.settlement, RFQSettlementMakerUpdate)
+    assert decoded.settlement is not None
+    assert decoded.settlement.rfq_id == 456
+    assert decoded.settlement.cid == "cid-456"
+    assert decoded.settlement.tx_hash == "0xtx"
+    assert len(decoded.settlement.quotes) == 1
+    quote = decoded.settlement.quotes[0]
+    assert quote.maker == "inj1maker"
+    assert quote.executed_quantity == "0.9"
+    assert quote.expiry.timestamp == 1234567890
+    assert quote.expiry.height == 321

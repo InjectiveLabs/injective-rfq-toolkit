@@ -13,6 +13,7 @@ Field layouts match the injective_rfq_rpc service proto:
 - TakerStreamRequest: field 3 = conditional_order, field 4 = conditional_order_signature,
   field 5 = conditional_order_sign_mode, field 6 = conditional_order_evm_chain_id
 - TakerStreamResponse: field 5 = conditional_order_ack
+- MakerStreamResponse: field 6 = RFQSettlementMakerUpdate, not RFQSettlementType
 """
 from __future__ import annotations
 
@@ -552,6 +553,7 @@ class RFQSettlementType:
     event_time: int = 0
     height: int = 0
     cid: str = ""
+    tx_hash: str = ""
 
     @classmethod
     def decode(cls, data: bytes) -> "RFQSettlementType":
@@ -605,6 +607,142 @@ class RFQSettlementType:
                     result.fallback_margin = value
                 elif field_num == 16:
                     result.cid = value
+                elif field_num == 17:
+                    result.tx_hash = value
+
+        return result
+
+
+@dataclass
+class RFQSettlementQuote:
+    """Quote data embedded in a maker settlement update.
+
+    Fields: 1=maker, 2=price, 3=quoted_margin, 4=quoted_quantity,
+    5=executed_margin, 6=executed_quantity, 7=expiry, 8=signature,
+    9=nonce, 10=status.
+    """
+
+    maker: str = ""
+    price: str = ""
+    quoted_margin: str = ""
+    quoted_quantity: str = ""
+    executed_margin: str = ""
+    executed_quantity: str = ""
+    expiry: RFQExpiryType = field(default_factory=RFQExpiryType)
+    signature: str = ""
+    nonce: int = 0
+    status: str = ""
+
+    @classmethod
+    def decode(cls, data: bytes) -> "RFQSettlementQuote":
+        result = cls()
+        pos = 0
+        while pos < len(data):
+            tag_wire, new_pos = _DecodeVarint32(data, pos)
+            field_num = tag_wire >> 3
+            wire_type = tag_wire & 0x7
+            pos = new_pos
+
+            if wire_type == 0:
+                value, pos = _DecodeVarint(data, pos)
+                if field_num == 9:
+                    result.nonce = value
+            elif wire_type == 2:
+                length, pos = _DecodeVarint32(data, pos)
+                value_bytes = data[pos:pos + length]
+                pos += length
+
+                if field_num == 7:
+                    result.expiry = _decode_expiry_type(value_bytes)
+                    continue
+
+                value = value_bytes.decode("utf-8")
+                if field_num == 1:
+                    result.maker = value
+                elif field_num == 2:
+                    result.price = value
+                elif field_num == 3:
+                    result.quoted_margin = value
+                elif field_num == 4:
+                    result.quoted_quantity = value
+                elif field_num == 5:
+                    result.executed_margin = value
+                elif field_num == 6:
+                    result.executed_quantity = value
+                elif field_num == 8:
+                    result.signature = value
+                elif field_num == 10:
+                    result.status = value
+
+        return result
+
+
+@dataclass
+class RFQSettlementMakerUpdate(RFQSettlementType):
+    """Settlement update delivered inside MakerStreamResponse.
+
+    This extends RFQSettlementType with field 50=repeated RFQSettlementQuote.
+    """
+
+    quotes: list[RFQSettlementQuote] = field(default_factory=list)
+
+    @classmethod
+    def decode(cls, data: bytes) -> "RFQSettlementMakerUpdate":
+        result = cls()
+        pos = 0
+        while pos < len(data):
+            tag_wire, new_pos = _DecodeVarint32(data, pos)
+            field_num = tag_wire >> 3
+            wire_type = tag_wire & 0x7
+            pos = new_pos
+
+            if wire_type == 0:
+                value, pos = _DecodeVarint(data, pos)
+                if field_num == 1:
+                    result.rfq_id = value
+                elif field_num == 11:
+                    result.transaction_time = value
+                elif field_num == 12:
+                    result.created_at = _decode_zigzag(value)
+                elif field_num == 13:
+                    result.updated_at = _decode_zigzag(value)
+                elif field_num == 14:
+                    result.event_time = value
+                elif field_num == 15:
+                    result.height = value
+            elif wire_type == 2:
+                length, pos = _DecodeVarint32(data, pos)
+                value_bytes = data[pos:pos + length]
+                pos += length
+
+                if field_num == 8:
+                    result.unfilled_action = RFQSettlementUnfilledActionType.decode(value_bytes)
+                    continue
+                if field_num == 50:
+                    result.quotes.append(RFQSettlementQuote.decode(value_bytes))
+                    continue
+
+                value = value_bytes.decode("utf-8")
+                if field_num == 2:
+                    result.market_id = value
+                elif field_num == 3:
+                    result.taker = value
+                elif field_num == 4:
+                    result.direction = value
+                elif field_num == 5:
+                    result.margin = value
+                elif field_num == 6:
+                    result.quantity = value
+                elif field_num == 7:
+                    result.worst_price = value
+                elif field_num == 9:
+                    result.fallback_quantity = value
+                elif field_num == 10:
+                    result.fallback_margin = value
+                elif field_num == 16:
+                    result.cid = value
+                elif field_num == 17:
+                    result.tx_hash = value
 
         return result
 
@@ -990,12 +1128,12 @@ class MakerStreamResponse:
     Fields: 1=message_type, 2=request, 3=quote_ack, 4=error,
     5=processed_quote, 6=settlement.
     """
-    message_type: str = ""  # "pong" | "request" | "quote_ack" | "error"
+    message_type: str = ""  # "pong" | "request" | "quote_ack" | "quote_update" | "settlement_update" | "error"
     request: Optional[RFQRequestType] = None
     quote_ack: Optional[QuoteStreamAck] = None
     error: Optional[StreamError] = None
     processed_quote: Optional[RFQProcessedQuoteType] = None
-    settlement: Optional[RFQSettlementType] = None
+    settlement: Optional[RFQSettlementMakerUpdate] = None
 
     @classmethod
     def decode(cls, data: bytes) -> "MakerStreamResponse":
@@ -1025,6 +1163,6 @@ class MakerStreamResponse:
                 elif field_num == 5:
                     result.processed_quote = RFQProcessedQuoteType.decode(value_bytes)
                 elif field_num == 6:
-                    result.settlement = RFQSettlementType.decode(value_bytes)
+                    result.settlement = RFQSettlementMakerUpdate.decode(value_bytes)
 
         return result
