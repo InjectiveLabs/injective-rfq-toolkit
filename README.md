@@ -143,6 +143,23 @@ python examples/python-mm/main-grpc.py # standalone MM bot (no rfq_test dep)
 python examples/python-mm/mark_quote_loop.py --edge-bps 25 --max-quantity 20
 ```
 
+To check whether external MMs are quoting a market without needing taker funds:
+
+```bash
+python scripts/probe_quotes.py --market-symbol "INJ/USDC PERP"
+python scripts/probe_quotes.py --market-id 0x... --quantity 1 --margin 10 --worst-price 0.08
+```
+
+The probe submits a TakerStream RFQ request and reports returned quotes. Add
+`--accept` if you also want to submit `AcceptQuote`; a settlement failure after
+quotes arrive is reported but does not fail the probe unless `--strict-settlement`
+is set.
+
+Use `--json` when diagnosing latency. The summary includes request ACK time,
+quote collection time, per-quote TTL at collection end, `AcceptQuote`
+confirmation time, and, after successful settlement, each quote expiry compared
+with the execution block time.
+
 For TypeScript and Go reference makers:
 
 ```bash
@@ -191,6 +208,27 @@ The RFQ Indexer uses **gRPC-web over WebSocket** with protobuf framing. Two stre
 - **Signing:** **EIP-712 v2** typed-data digest → secp256k1 raw → `0x` + `r ‖ s ‖ v` (v=0/1, **not** 27/28). Custom layout, *not* `eth_signTypedData_v4`. Spec in [`crypto/eip712.py`](src/rfq_test/crypto/eip712.py); recipe in [PYTHON_BUILDING_GUIDE.md § Quote Signing (v2)](PYTHON_BUILDING_GUIDE.md#quote-signing-v2).
 - **Wire-required fields:** every quote and conditional-order create carries `sign_mode="v2"` and `evm_chain_id` (`1439` testnet, `1776` mainnet). Missing or empty values are rejected. Keep `chain_id` as the Cosmos string (`injective-888` / `injective-1`); do not put `1439` or `1776` in `chain_id`.
 - **MakerStream auth handshake:** the first server message after a maker connects is a `MakerChallenge`. Sign the `StreamAuthChallenge` typed-data and reply with `MakerAuth{evm_chain_id, signature}`. `MakerStreamClient` does this for you when you pass `auth_private_key` + `auth_evm_chain_id` + `auth_contract_address`. Standalone implementations in `examples/{python,go,ts}-mm/main-grpc.*`. Full protocol: [PYTHON_BUILDING_GUIDE.md § MakerStream Auth Handshake](PYTHON_BUILDING_GUIDE.md#makerstream-auth-handshake).
+
+### Production timing lessons
+
+Maker quote expiries may be short. Some production makers require roughly 1.5s
+of total quote lifetime, including the taker's quote collection window. Any
+frontend or client that does fresh market, oracle, account, or grant checks
+after the user clicks submit will feel slow and may settle against a worse
+surviving quote.
+
+For browser gateway flows, instrument prepare duration, local signing duration,
+broadcast/accept duration, confirmation polling, and cleanup. For toolkit
+TakerStream flows, instrument request ACK time, quote collection time, quote TTL
+at collection end, and `AcceptQuote` confirmation time. When a quote expires
+on-chain, compare the quote expiry timestamp with the execution block time
+before guessing whether time was lost in collection, signing, broadcast, or
+block inclusion.
+
+For market makers, log quote send-to-ACK duration and quote expiry. A
+`quote_ack` only means the indexer accepted and routed the quote; if there is no
+later quote or settlement update before the maker-set expiry, treat that quote
+as not filled.
 
 ### Maker subscriptions
 
