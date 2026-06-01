@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 
 	pb "mm-scripts-go/proto/injective_rfq_rpc"
@@ -52,10 +54,10 @@ func StreamMakerSettlements(
 				log.Printf("settlement event decode error: %v", err)
 				continue
 			}
-			if settlement == nil || !settlementHasMakerQuote(settlement, makerAddr) {
+			if settlement == nil || !makerHasTraded(settlement, makerAddr) {
 				continue
 			}
-			out <- convertSettlementToMakerUpdate(settlement, makerAddr, event.Events)
+			out <- convertSettlementToMakerUpdate(settlement, event.Events)
 		}
 	}
 }
@@ -183,21 +185,31 @@ func stringPtrAttr(attrs map[string]string, key string) *string {
 	return &v
 }
 
-func matchingQuoteResults(results []rfqQuoteResult, maker string) map[string]rfqQuoteResult {
-	out := make(map[string]rfqQuoteResult)
-	for _, result := range results {
-		if result.Maker == maker {
-			out[result.Maker] = result
+func makerHasTraded(settlement *rfqSettlement, maker string) bool {
+	for _, quote := range settlement.QuoteResults {
+		if quote.Maker != maker {
+			continue
 		}
-	}
-	return out
-}
-
-func settlementHasMakerQuote(settlement *rfqSettlement, maker string) bool {
-	for _, quote := range settlement.Quotes {
-		if quote.Maker == maker {
-			return true
+		var (
+			qty = decimal.Zero
+			mgn = decimal.Zero
+			err error
+		)
+		if quote.Quantity != nil {
+			qty, err = decimal.NewFromString(*quote.Quantity)
+			if err != nil {
+				fmt.Printf("error parsing quote quantity %s: %v", *quote.Quantity, err)
+				qty = decimal.Zero
+			}
 		}
+		if quote.Margin != nil {
+			mgn, err = decimal.NewFromString(*quote.Margin)
+			if err != nil {
+				fmt.Printf("error parsing quote margin %s: %v", *quote.Margin, err)
+				mgn = decimal.Zero
+			}
+		}
+		return !qty.IsZero() || !mgn.IsZero()
 	}
 	return false
 }
@@ -256,13 +268,13 @@ func convertUnfilledAction(action *rfqUnfilledAction) *pb.RFQSettlementUnfilledA
 	return out
 }
 
-func convertSettlementToMakerUpdate(settlement *rfqSettlement, makerAddr string, events map[string][]string) *pb.RFQSettlementMakerUpdate {
-	resultsByMaker := matchingQuoteResults(settlement.QuoteResults, makerAddr)
+func convertSettlementToMakerUpdate(settlement *rfqSettlement, events map[string][]string) *pb.RFQSettlementMakerUpdate {
+	resultsByMaker := make(map[string]rfqQuoteResult)
+	for _, quote := range settlement.QuoteResults {
+		resultsByMaker[quote.Maker] = quote
+	}
 	quotes := make([]*pb.RFQSettlementQuote, 0, len(settlement.Quotes))
 	for _, quote := range settlement.Quotes {
-		if quote.Maker != makerAddr {
-			continue
-		}
 		quotes = append(quotes, convertSettlementQuote(quote, resultsByMaker[quote.Maker]))
 	}
 

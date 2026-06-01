@@ -50,6 +50,7 @@ import (
 
 	"mm-scripts-go/chainsettlement"
 	pb "mm-scripts-go/proto/injective_rfq_rpc"
+	"mm-scripts-go/queue"
 )
 
 const PING_INTERVAL = 10 * time.Second
@@ -460,7 +461,7 @@ func main() {
 			go func() {
 				for settlement := range settlementCh {
 					respCh <- &pb.MakerStreamResponse{
-						MessageType: "settlement_update",
+						MessageType: "settlement_update_chain",
 						Settlement:  settlement,
 					}
 				}
@@ -474,6 +475,8 @@ func main() {
 	fmt.Println("📡 MM connected — listening for RFQ requests...")
 	fmt.Println()
 
+	settlementSeen := queue.NewFIFOSet(5000)
+
 	// Read loop
 	for {
 		var resp *pb.MakerStreamResponse
@@ -483,6 +486,7 @@ func main() {
 		case resp = <-respCh:
 		}
 
+		fromChain := false
 		switch resp.MessageType {
 		case "pong":
 			// keep-alive ack
@@ -539,9 +543,16 @@ func main() {
 			qu := resp.ProcessedQuote
 			fmt.Printf("📊 Quote update: rfq_id=%d status=%s\n", qu.RfqId, qu.Status)
 
+		case "settlement_update_chain":
+			fromChain = true
+			fallthrough
 		case "settlement_update":
 			s := resp.Settlement
-			fmt.Printf("⚖️  Settlement: rfq_id=%d cid=%s\n", s.RfqId, s.Cid)
+			settlementID := fmt.Sprintf("%s:%d", s.Taker, s.RfqId)
+			if !settlementSeen.Add(settlementID) {
+				continue
+			}
+			log.Printf("⚖️  Settlement: rfq_id=%d cid=%s (from chain: %v)\n", s.RfqId, s.Cid, fromChain)
 			for _, q := range s.Quotes {
 				fmt.Printf("   quote: maker=%s price=%s status=%s\n", q.Maker, q.Price, q.Status)
 			}
