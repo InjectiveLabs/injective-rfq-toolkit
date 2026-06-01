@@ -85,7 +85,8 @@ RFQ_ENV=testnet python3 mark_quote_loop.py \
   --maker-subaccount-nonce 0
 ```
 
-For mainnet or private deployments, set `RFQ_CONTRACT_ADDRESS` and the matching
+For mainnet, use RFQ contract `inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k`; it takes effect June 3.
+For private deployments, set `RFQ_CONTRACT_ADDRESS` and the matching
 `MAINNET_MM_PRIVATE_KEY`/`MM_PRIVATE_KEY` in your environment first. Use
 `--fixed-price <price>` when you want to quote one static price for simple live
 tests.
