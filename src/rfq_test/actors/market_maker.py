@@ -292,7 +292,7 @@ class MarketMaker:
         self,
         chain_client: ChainClient,
         contract_address: str,
-        expire_in_seconds: int = 365 * 24 * 60 * 60,  # 1 year default
+        expire_in_seconds: Optional[int] = None,  # None => permanent grant (expiration: null)
     ) -> list[str]:
         """Grant authorization to the RFQ contract.
         
@@ -303,7 +303,8 @@ class MarketMaker:
         Args:
             chain_client: Chain client for broadcasting transactions
             contract_address: RFQ contract address (grantee)
-            expire_in_seconds: Grant expiration time
+            expire_in_seconds: Seconds until the grants expire. None (default) makes them
+                permanent (expiration: null) so the maker never silently loses authz.
             
         Returns:
             List of transaction hashes

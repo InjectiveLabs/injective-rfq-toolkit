@@ -939,6 +939,9 @@ if code != 0:
 - **Retries:** Implement retries for transient failures (timeouts, connection drops). Use exponential backoff.
 - **Connection lifecycle:** Reconnect on close. Handle stream errors and re-establish the stream.
 - **Logging:** Log the exact JSON you sign, and the exact payload you send. This helps debug signature and proto mismatches.
+- **Latency budget:** Some makers use roughly 1.5s total quote lifetime, including quote collection. Keep market metadata, prices, account state, and grants warm before a taker submits.
+- **Timing diagnostics:** Log request ACK time, quote collection time, quote TTL at collection end, broadcast/confirmation time, and quote expiry versus execution block time. Use `scripts/probe_quotes.py --json --accept` as a reference diagnostic.
+- **Settlement outcomes:** Decode maker `settlement_update` quotes and `tx_hash` when available. They show which quotes filled, which were rejected, and whether expiry or price checks caused the final outcome.
 - **Rate limiting:** Respect indexer and chain rate limits. Don't blast requests.
 
 ---
@@ -953,6 +956,7 @@ if code != 0:
 | **Indexer** | `request_address` header for TakerStream; `maker_address` + optional subscription headers for MakerStream; `"long"`/`"short"` strings | Use numeric direction; omit required headers |
 | **Contract** | FPDecimal strings; worst_price within 10% of mark; prices quantized to `min_price_tick_size` before signing; check `tx_response.code` | Use 1e6 integers; ignore tick sizes; sign then quantize; assume tx success from hash only |
 | **Errors** | Check `code == 0`; read `rawLog` on failure; treat signing-mode validation errors as missing or unsupported `sign_mode` in your client | Assume success from tx hash |
+| **Timing** | Measure ACK, collection, quote TTL, confirmation, and expiry-vs-block deltas | Guess why a bad quote filled without comparing expiry timestamps to block time |
 | **Conditional Orders** | Use `sign_conditional_order_v2`; `margin="0"` for reduce-only; track `epoch` / `lane_version`; pass `sign_mode="v2"` + `evm_chain_id` (default) on TakerStream + REST; sign the same `unfilled_action` you send on the wire | Flat trigger fields; non-zero margin; reuse stale `epoch`/`lane_version` after cancel; mismatch `unfilled_action` between sign and send |
 
 ---
