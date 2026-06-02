@@ -11,11 +11,13 @@ import struct
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import AsyncIterator, Optional
 
 import certifi
 import websockets
 
+from rfq_test.clients.chain_settlement import stream_maker_settlements
 from rfq_test.exceptions import (
     IndexerConnectionError,
     IndexerTimeoutError,
@@ -735,6 +737,8 @@ class MakerStreamClient(BaseStreamClient):
         auth_private_key: Optional[str] = None,
         auth_evm_chain_id: Optional[int] = None,
         auth_contract_address: Optional[str] = None,
+        comet_bft_endpoint: Optional[str] = None,
+        settlement_contract_address: Optional[str] = None,
         timeout: float = 10.0,
     ):
         """Initialize Maker stream client.
@@ -747,6 +751,9 @@ class MakerStreamClient(BaseStreamClient):
             auth_private_key: Maker private key used to answer MakerChallenge
             auth_evm_chain_id: EVM chain ID from the RFQ signing domain
             auth_contract_address: RFQ contract bech32 address for the signing domain
+            comet_bft_endpoint: Optional CometBFT endpoint for chain settlement updates
+            settlement_contract_address: RFQ contract address used in the chain event query.
+                Defaults to auth_contract_address.
             timeout: Default timeout for operations
         """
         super().__init__(base_url, timeout=timeout)
@@ -756,6 +763,30 @@ class MakerStreamClient(BaseStreamClient):
         self._auth_private_key = auth_private_key
         self._auth_evm_chain_id = auth_evm_chain_id
         self._auth_contract_address = auth_contract_address
+        self._comet_bft_endpoint = comet_bft_endpoint
+        self._settlement_contract_address = settlement_contract_address or auth_contract_address
+        self._chain_settlement_queue: asyncio.Queue[RFQSettlementMakerUpdate] = asyncio.Queue()
+        self._chain_settlement_stop: Optional[asyncio.Event] = None
+        self._chain_settlement_task: Optional[asyncio.Task] = None
+        self._chain_settlement_forward_task: Optional[asyncio.Task] = None
+        self._settlement_seen: set[str] = set()
+        self._settlement_seen_order: deque[str] = deque()
+        self._settlement_seen_max = 5000
+
+    async def connect(self) -> None:
+        """Connect to MakerStream and optional CometBFT settlement stream."""
+        await super().connect()
+        self._start_chain_settlement_stream()
+
+    async def close(self) -> None:
+        """Close MakerStream and optional CometBFT settlement stream."""
+        await self._stop_chain_settlement_stream()
+        await super().close()
+
+    async def _cleanup_connection(self) -> None:
+        """Stop all MakerStream background tasks."""
+        await self._stop_chain_settlement_stream()
+        await super()._cleanup_connection()
     
     @property
     def stream_path(self) -> str:
@@ -771,6 +802,90 @@ class MakerStreamClient(BaseStreamClient):
         if self._subscribe_to_settlement_updates:
             headers["subscribe_to_settlement_updates"] = "true"
         return headers or None
+
+    def _start_chain_settlement_stream(self) -> None:
+        if (
+            not self._comet_bft_endpoint
+            or not self._settlement_contract_address
+            or not self._maker_address
+        ):
+            return
+        if self._chain_settlement_task and not self._chain_settlement_task.done():
+            return
+
+        self._chain_settlement_stop = asyncio.Event()
+        self._chain_settlement_task = asyncio.create_task(
+            stream_maker_settlements(
+                self._comet_bft_endpoint,
+                self._settlement_contract_address,
+                self._maker_address,
+                self._chain_settlement_queue,
+                self._chain_settlement_stop,
+            )
+        )
+        self._chain_settlement_forward_task = asyncio.create_task(
+            self._forward_chain_settlements()
+        )
+
+    async def _stop_chain_settlement_stream(self) -> None:
+        if self._chain_settlement_stop:
+            self._chain_settlement_stop.set()
+
+        for task in (self._chain_settlement_forward_task, self._chain_settlement_task):
+            if not task:
+                continue
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        self._chain_settlement_task = None
+        self._chain_settlement_forward_task = None
+        self._chain_settlement_stop = None
+
+    async def _forward_chain_settlements(self) -> None:
+        while True:
+            settlement = await self._chain_settlement_queue.get()
+            await self._queue_settlement_update(settlement, source="chain")
+
+    def _settlement_key(self, settlement: RFQSettlementMakerUpdate) -> str:
+        return f"{settlement.taker}:{settlement.rfq_id}"
+
+    def _mark_settlement_seen(self, settlement: RFQSettlementMakerUpdate) -> bool:
+        key = self._settlement_key(settlement)
+        if key in self._settlement_seen:
+            return False
+
+        self._settlement_seen.add(key)
+        self._settlement_seen_order.append(key)
+        while len(self._settlement_seen_order) > self._settlement_seen_max:
+            old_key = self._settlement_seen_order.popleft()
+            self._settlement_seen.discard(old_key)
+        return True
+
+    async def _queue_settlement_update(
+        self,
+        settlement: RFQSettlementMakerUpdate,
+        source: str,
+    ) -> None:
+        if not self._mark_settlement_seen(settlement):
+            logger.debug(
+                "Skipping duplicate settlement update from %s: RFQ#%s taker=%s",
+                source,
+                settlement.rfq_id,
+                settlement.taker,
+            )
+            return
+
+        logger.info(
+            "Received settlement update from %s: RFQ#%s taker=%s cid=%s",
+            source,
+            settlement.rfq_id,
+            settlement.taker,
+            settlement.cid,
+        )
+        await self._message_queue.put(("settlement_update", settlement))
     
     async def _send_ping(self) -> None:
         """Send ping to keep connection alive."""
@@ -845,13 +960,7 @@ class MakerStreamClient(BaseStreamClient):
 
                 elif msg_type == "settlement_update":
                     settlement = response.settlement
-                    logger.info(
-                        "Received settlement update: RFQ#%s taker=%s cid=%s",
-                        settlement.rfq_id,
-                        settlement.taker,
-                        settlement.cid,
-                    )
-                    await self._message_queue.put(("settlement_update", settlement))
+                    await self._queue_settlement_update(settlement, source="indexer")
 
                 elif msg_type == "error":
                     err = response.error

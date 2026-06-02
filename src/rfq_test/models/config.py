@@ -21,6 +21,7 @@ class ChainConfig(BaseModel):
     grpc_exchange_endpoint: Optional[str] = None
     grpc_explorer_endpoint: Optional[str] = None
     chain_stream_endpoint: Optional[str] = None
+    comet_bft_endpoint: Optional[str] = None
 
 
 class IndexerConfig(BaseModel):

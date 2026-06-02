@@ -36,6 +36,7 @@ class MarketMaker:
         evm_chain_id: Optional[int] = None,
         subscribe_to_quotes_updates: bool = False,
         subscribe_to_settlement_updates: bool = False,
+        comet_bft_endpoint: Optional[str] = None,
     ):
         self.wallet = wallet
         self.ws_url = ws_url
@@ -46,6 +47,7 @@ class MarketMaker:
         self.evm_chain_id = evm_chain_id
         self.subscribe_to_quotes_updates = subscribe_to_quotes_updates
         self.subscribe_to_settlement_updates = subscribe_to_settlement_updates
+        self.comet_bft_endpoint = comet_bft_endpoint
         self._ws_client: Optional[MakerStreamClient] = None
     
     @property
@@ -63,6 +65,7 @@ class MarketMaker:
             auth_private_key=self.wallet.private_key,
             auth_evm_chain_id=self.evm_chain_id,
             auth_contract_address=self.contract_address,
+            comet_bft_endpoint=self.comet_bft_endpoint,
         )
         await self._ws_client.connect()
     
