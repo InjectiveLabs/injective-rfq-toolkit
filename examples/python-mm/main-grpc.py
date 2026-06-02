@@ -400,6 +400,8 @@ async def main():
                 if settlements_seen.add(settlement_key(settlement)):
                     print_settlement_update(settlement, source="chain")
                 settlement_read = asyncio.create_task(settlement_queue.get())
+
+            if stream_read not in done:
                 continue
 
             resp = stream_read.result()
