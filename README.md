@@ -183,7 +183,7 @@ pytest                   # everything except `load`
 |------|---------|---------|
 | Cosmos chain ID | `injective-888` | `injective-1` |
 | EVM chain ID (EIP-712 domain) | `1439` | `1776` |
-| RFQ Contract | `inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk` | Set `RFQ_CONTRACT_ADDRESS` |
+| RFQ Contract | `inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk` | `inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k`<br/>takes effect June 3 |
 | MakerStream WSS | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` |
 | TakerStream WSS | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` |
 | Indexer gRPC-web | `https://rfq.grpc-web.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC` | `https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |

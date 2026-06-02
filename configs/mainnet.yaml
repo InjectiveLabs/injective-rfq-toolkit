@@ -20,8 +20,9 @@ indexer:
   grpc_web_endpoint: "https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
 
 contract:
-  # Set RFQ_CONTRACT_ADDRESS in .env for private/test deployments.
-  address: ""
+  # Canonical mainnet RFQ contract. Takes effect June 3.
+  # Set RFQ_CONTRACT_ADDRESS in .env only for private/test deployments.
+  address: "inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k"
 
 markets:
   - id: "0xb562b7a440a435e0065d1a22ab74f1f40f25e35476854cd62ee2897c444a287d"
