@@ -43,6 +43,15 @@ from rfq_test.utils.price import (
 )
 
 
+def stream_error_fields(error) -> tuple[str, str, str, int]:
+    return (
+        getattr(error, "code", ""),
+        getattr(error, "message_", None) or getattr(error, "message", ""),
+        getattr(error, "taker", ""),
+        getattr(error, "rfq_id", 0),
+    )
+
+
 def _direction(raw: str) -> str | None:
     value = str(raw).lower()
     if value in {"0", "long"}:
@@ -397,7 +406,14 @@ async def main() -> None:
                 continue
 
             if msg_type == "error":
-                print(f"Stream error: code={data.code} message={data.message_}")
+                code, message, taker, rfq_id = stream_error_fields(data)
+                print(
+                    "Stream error:",
+                    f"code={code}",
+                    f"message={message}",
+                    f"taker={taker}",
+                    f"rfq_id={rfq_id}",
+                )
                 continue
             if msg_type != "request":
                 continue
@@ -497,6 +513,7 @@ async def main() -> None:
                 print(
                     "Quote ACK:",
                     f"rfq_id={request['rfq_id']}",
+                    f"taker={ack.get('taker') if ack else taker}",
                     f"status={ack.get('status') if ack else 'unknown'}",
                     f"ack_ms={ack_ms:.1f}",
                 )

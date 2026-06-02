@@ -58,6 +58,14 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 const proto = grpc.loadPackageDefinition(packageDefinition);
 const InjectiveRfqRPC = (proto.injective_rfq_rpc as any).InjectiveRfqRPC;
 
+function formatStreamError(e: any): string {
+  const parts = [`${e.code}: ${e.message_}`];
+  if (e.taker) parts.push(`taker=${e.taker}`);
+  if (e.rfq_id) parts.push(`rfq_id=${e.rfq_id}`);
+  if (e.id) parts.push(`id=${e.id}`);
+  return parts.join(" ");
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                   CONFIG                                   */
 /* -------------------------------------------------------------------------- */
@@ -290,7 +298,7 @@ async function main() {
       }
       case "error": {
         const e = response.error;
-        const msg = `${e.code}: ${e.message_}`;
+        const msg = formatStreamError(e);
         console.error("❌ Stream error:", msg);
         ackReject?.(new Error(msg));
         ackResolve = null;
