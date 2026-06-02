@@ -284,8 +284,11 @@ async def send_quote(
     )
 
 
-def print_settlement_update(settlement) -> None:
-    print(f"⚖️  Settlement: rfq_id={settlement.rfq_id} cid={settlement.cid}")
+def print_settlement_update(settlement, source: str) -> None:
+    print(
+        f"⚖️  Settlement: rfq_id={settlement.rfq_id} cid={settlement.cid} "
+        f"source={source}"
+    )
     for quote in settlement.quotes:
         print(
             f"   quote: maker={quote.maker} price={quote.price} "
@@ -368,7 +371,7 @@ async def main():
             done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
 
             if settlement_read is not None and settlement_read in done:
-                print_settlement_update(settlement_read.result())
+                print_settlement_update(settlement_read.result(), source="chain")
                 settlement_read = asyncio.create_task(settlement_queue.get())
                 continue
 
@@ -443,7 +446,7 @@ async def main():
                 )
 
             elif msg_type == "settlement_update":
-                print_settlement_update(resp.settlement)
+                print_settlement_update(resp.settlement, source="indexer")
 
             elif msg_type == "error":
                 e = resp.error

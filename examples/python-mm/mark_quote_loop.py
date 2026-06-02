@@ -386,6 +386,7 @@ async def main() -> None:
                     f"quantity={settlement['quantity']}",
                     f"margin={settlement['margin']}",
                     f"cid={settlement['cid']}",
+                    f"source={settlement['source']}",
                     f"quotes={settlement['quotes']}",
                 )
                 outstanding_quotes = [

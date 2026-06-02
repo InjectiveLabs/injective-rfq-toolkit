@@ -171,6 +171,7 @@ async def main() -> None:
                     f"quantity={data.quantity}",
                     f"margin={data.margin}",
                     f"cid={data.cid}",
+                    f"source={client.settlement_source(data)}",
                     f"quotes={[q.maker for q in data.quotes]}",
                 )
                 continue

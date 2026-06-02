@@ -771,6 +771,7 @@ class MakerStreamClient(BaseStreamClient):
         self._chain_settlement_forward_task: Optional[asyncio.Task] = None
         self._settlement_seen: set[str] = set()
         self._settlement_seen_order: deque[str] = deque()
+        self._settlement_sources: dict[str, str] = {}
         self._settlement_seen_max = 5000
 
     async def connect(self) -> None:
@@ -852,6 +853,10 @@ class MakerStreamClient(BaseStreamClient):
     def _settlement_key(self, settlement: RFQSettlementMakerUpdate) -> str:
         return f"{settlement.taker}:{settlement.rfq_id}"
 
+    def settlement_source(self, settlement: RFQSettlementMakerUpdate) -> str:
+        """Return the source for a queued settlement update."""
+        return self._settlement_sources.get(self._settlement_key(settlement), "")
+
     def _mark_settlement_seen(self, settlement: RFQSettlementMakerUpdate) -> bool:
         key = self._settlement_key(settlement)
         if key in self._settlement_seen:
@@ -862,6 +867,7 @@ class MakerStreamClient(BaseStreamClient):
         while len(self._settlement_seen_order) > self._settlement_seen_max:
             old_key = self._settlement_seen_order.popleft()
             self._settlement_seen.discard(old_key)
+            self._settlement_sources.pop(old_key, None)
         return True
 
     async def _queue_settlement_update(
@@ -885,6 +891,7 @@ class MakerStreamClient(BaseStreamClient):
             settlement.taker,
             settlement.cid,
         )
+        self._settlement_sources[self._settlement_key(settlement)] = source
         await self._message_queue.put(("settlement_update", settlement))
     
     async def _send_ping(self) -> None:
@@ -1305,6 +1312,7 @@ class MakerStreamClient(BaseStreamClient):
             "event_time": settlement.event_time,
             "transaction_time": settlement.transaction_time,
             "height": settlement.height,
+            "source": self.settlement_source(settlement),
             "quotes": [
                 {
                     "maker": q.maker,
