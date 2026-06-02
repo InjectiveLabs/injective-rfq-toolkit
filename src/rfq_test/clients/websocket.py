@@ -847,8 +847,13 @@ class MakerStreamClient(BaseStreamClient):
 
     async def _forward_chain_settlements(self) -> None:
         while True:
-            settlement = await self._chain_settlement_queue.get()
-            await self._queue_settlement_update(settlement, source="chain")
+            try:
+                settlement = await self._chain_settlement_queue.get()
+                await self._queue_settlement_update(settlement, source="chain")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Failed to forward chain settlement update")
 
     def _settlement_key(self, settlement: RFQSettlementMakerUpdate) -> str:
         return f"{settlement.taker}:{settlement.rfq_id}"

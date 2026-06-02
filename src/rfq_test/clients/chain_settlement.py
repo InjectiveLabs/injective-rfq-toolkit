@@ -11,6 +11,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse, urlunparse
 
 import websockets
+from websockets.exceptions import WebSocketException
 
 from rfq_test.proto.injective_rfq_rpc_pb2 import (
     RFQExpiryType,
@@ -24,6 +25,8 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
 logger = logging.getLogger(__name__)
 
 EVENT_TYPE = "wasm-rfq-accept-quote"
+RECONNECT_DELAY_SECONDS = 1.0
+MAX_RECONNECT_DELAY_SECONDS = 30.0
 
 
 def comet_ws_url(endpoint: str) -> str:
@@ -55,34 +58,50 @@ async def stream_maker_settlements(
     ws_url = comet_ws_url(endpoint)
     logger.info("Subscribing to CometBFT settlements: endpoint=%s query=%s", ws_url, query)
 
-    async with websockets.connect(ws_url) as ws:
-        await ws.send(
-            json.dumps(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "subscribe",
-                    "id": 1,
-                    "params": {"query": query},
-                }
+    reconnect_delay = RECONNECT_DELAY_SECONDS
+    while stop is None or not stop.is_set():
+        try:
+            async with websockets.connect(ws_url) as ws:
+                reconnect_delay = RECONNECT_DELAY_SECONDS
+                await ws.send(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "method": "subscribe",
+                            "id": 1,
+                            "params": {"query": query},
+                        }
+                    )
+                )
+
+                while stop is None or not stop.is_set():
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                    except TimeoutError:
+                        continue
+
+                    msg = json.loads(raw)
+                    events = msg.get("result", {}).get("events")
+                    if not isinstance(events, dict):
+                        continue
+
+                    settlement = settlement_from_events(events)
+                    if settlement is None or not maker_has_traded(settlement, maker_address):
+                        continue
+
+                    await out_queue.put(settlement_to_maker_update(settlement, events))
+        except asyncio.CancelledError:
+            raise
+        except (OSError, WebSocketException) as exc:
+            if stop is not None and stop.is_set():
+                break
+            logger.warning(
+                "CometBFT settlement stream disconnected: %s; reconnecting in %.1fs",
+                exc,
+                reconnect_delay,
             )
-        )
-
-        while stop is None or not stop.is_set():
-            try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
-            except TimeoutError:
-                continue
-
-            msg = json.loads(raw)
-            events = msg.get("result", {}).get("events")
-            if not isinstance(events, dict):
-                continue
-
-            settlement = settlement_from_events(events)
-            if settlement is None or not maker_has_traded(settlement, maker_address):
-                continue
-
-            await out_queue.put(settlement_to_maker_update(settlement, events))
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, MAX_RECONNECT_DELAY_SECONDS)
 
 
 def first_event_value(events: Mapping[str, list[str]], key: str) -> str:

@@ -179,10 +179,15 @@ async def main() -> None:
 
         while True:
             try:
-                msg_type, data = await client.get_next_event(timeout=60.0)
+                event = await client.get_next_event(timeout=60.0)
             except IndexerTimeoutError:
                 print("No RFQs in the last 60s; still listening.")
                 continue
+            if event is None:
+                print("No RFQs in the last 60s; still listening.")
+                continue
+
+            msg_type, data = event
 
             if msg_type == "settlement_update":
                 if not settlements_seen.add(f"{data.taker}:{data.rfq_id}"):
