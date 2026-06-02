@@ -26,6 +26,7 @@ def test_mainnet_env_overrides_contract_and_credentials(monkeypatch):
     get_environment_config.cache_clear()
     monkeypatch.setenv("RFQ_ENV", "mainnet")
     monkeypatch.setenv("RFQ_CONTRACT_ADDRESS", "inj1mainnetcontract")
+    monkeypatch.setenv("CHAIN_COMETBFT_ENDPOINT", "https://comet.example")
     monkeypatch.setenv("MAINNET_MM_PRIVATE_KEY", "11" * 32)
     monkeypatch.setenv("MAINNET_RETAIL_PRIVATE_KEY", "22" * 32)
 
@@ -39,3 +40,4 @@ def test_mainnet_env_overrides_contract_and_credentials(monkeypatch):
     assert settings.mm_private_key == "11" * 32
     assert settings.retail_private_key == "22" * 32
     assert config.contract.address == "inj1mainnetcontract"
+    assert config.chain.comet_bft_endpoint == "https://comet.example"

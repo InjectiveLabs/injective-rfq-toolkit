@@ -203,6 +203,7 @@ def _print_startup(
     price_tick: Decimal | None,
     qty_tick: Decimal | None,
     taker_address: str | None,
+    comet_bft_endpoint: str | None,
 ) -> None:
     chain_id, contract_address = config.signing_context
     evm_chain_id, _ = config.signing_context_v2
@@ -276,6 +277,7 @@ async def main() -> None:
     wallet = Wallet.from_private_key(mm_private_key)
     chain_id, contract_address = config.signing_context
     evm_chain_id, _ = config.signing_context_v2
+    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
 
     edge_bps = Decimal(args.edge_bps)
     fixed_price = Decimal(args.fixed_price) if args.fixed_price is not None else None
@@ -309,12 +311,12 @@ async def main() -> None:
         price_tick=price_tick,
         qty_tick=qty_tick,
         taker_address=args.taker_address,
+        comet_bft_endpoint=comet_bft_endpoint,
     )
 
     quotes_sent = 0
     outstanding_quotes: list[tuple[str, float, Decimal]] = []
     started_at = time.monotonic()
-
     async with MakerStreamClient(
         config.indexer.ws_endpoint,
         maker_address=wallet.inj_address,
@@ -323,8 +325,13 @@ async def main() -> None:
         auth_private_key=wallet.private_key,
         auth_evm_chain_id=evm_chain_id,
         auth_contract_address=contract_address,
+        comet_bft_endpoint=comet_bft_endpoint,
+        settlement_contract_address=contract_address,
         timeout=30.0,
     ) as client:
+        if comet_bft_endpoint:
+            print("Subscribing to cometBFT chain")
+            print(f"  endpoint: {comet_bft_endpoint}")
         print("Connected. Listening for RFQs.")
         while True:
             runtime_elapsed = time.monotonic() - started_at
@@ -343,12 +350,14 @@ async def main() -> None:
             ]
 
             try:
-                event = await client.get_next_event(timeout=60.0)
+                event = await client.get_next_event(timeout=1.0 if comet_bft_endpoint else 60.0)
             except IndexerTimeoutError:
-                print("No RFQs in the last 60s; still listening.")
+                if not comet_bft_endpoint:
+                    print("No RFQs in the last 60s; still listening.")
                 continue
             if event is None:
-                print("No RFQs in the last 60s; still listening.")
+                if not comet_bft_endpoint:
+                    print("No RFQs in the last 60s; still listening.")
                 continue
 
             msg_type, data = event
@@ -379,6 +388,7 @@ async def main() -> None:
                     f"quantity={settlement['quantity']}",
                     f"margin={settlement['margin']}",
                     f"cid={settlement['cid']}",
+                    f"source={settlement['source']}",
                     f"quotes={settlement['quotes']}",
                 )
                 outstanding_quotes = [
@@ -453,7 +463,7 @@ async def main() -> None:
                     f"side={side}",
                     f"request_qty={request['quantity']}",
                     f"request_margin={request['margin']}",
-                    f"quote_qty={quantity}",
+                    f"quote_qty={quote_qty}",
                     f"quote_margin={margin}",
                     f"mark={mark}",
                     f"price={price}",

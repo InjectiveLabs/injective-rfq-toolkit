@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -30,12 +31,15 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 
-	"github.com/cosmos/cosmos-sdk/types/bech32"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
 	ethsecp256k1 "github.com/InjectiveLabs/sdk-go/chain/crypto/ethsecp256k1"
+
+	"mm-scripts-go/chainsettlement"
+	pb "mm-scripts-go/proto/injective_rfq_rpc"
 )
 
 const WS_URL = "ws://localhost:4464/ws"
@@ -73,7 +77,7 @@ type Quote struct {
 	Maker           string  `json:"maker,omitempty"`
 	Taker           string  `json:"taker,omitempty"`
 	Signature       string  `json:"signature"`
-	SignMode        string  `json:"sign_mode"`            // required by indexer ("v2" for everything this script signs)
+	SignMode        string  `json:"sign_mode"` // required by indexer ("v2" for everything this script signs)
 	EvmChainID      uint64  `json:"evm_chain_id"`
 	Nonce           *uint64 `json:"nonce,omitempty"`
 }
@@ -112,9 +116,9 @@ func bech32ToEvm(addr string) ([20]byte, error) {
 	return out, nil
 }
 
-func encU8(v uint8) []byte    { b := make([]byte, 32); b[31] = v; return b }
-func encU32(v uint32) []byte  { b := make([]byte, 32); binary.BigEndian.PutUint32(b[28:], v); return b }
-func encU64(v uint64) []byte  { b := make([]byte, 32); binary.BigEndian.PutUint64(b[24:], v); return b }
+func encU8(v uint8) []byte      { b := make([]byte, 32); b[31] = v; return b }
+func encU32(v uint32) []byte    { b := make([]byte, 32); binary.BigEndian.PutUint32(b[28:], v); return b }
+func encU64(v uint64) []byte    { b := make([]byte, 32); binary.BigEndian.PutUint64(b[24:], v); return b }
 func encAddr(a [20]byte) []byte { b := make([]byte, 32); copy(b[12:], a[:]); return b }
 func encString(s string) []byte { return ethcrypto.Keccak256([]byte(s)) }
 
@@ -320,12 +324,20 @@ func sendQuote(
 	return ws.WriteMessage(websocket.TextMessage, bz)
 }
 
+func printSettlementUpdate(s *pb.RFQSettlementMakerUpdate) {
+	fmt.Printf("⚖️  Settlement: rfq_id=%d cid=%s\n", s.RfqId, s.Cid)
+	for _, q := range s.Quotes {
+		fmt.Printf("   quote: maker=%s price=%s status=%s\n", q.Maker, q.Price, q.Status)
+	}
+}
+
 func main() {
 	_ = godotenv.Load()
 
 	mmPK := mustEnv("MM_PRIVATE_KEY")
 	contractAddr := mustEnv("CONTRACT_ADDRESS")
 	chainID := mustEnv("CHAIN_ID")
+	cometBFTEndpoint := os.Getenv("CHAIN_COMETBFT_ENDPOINT")
 	// CHAIN_ID is the Cosmos chain ID ("injective-888" / "injective-1").
 	// EVM_CHAIN_ID is the numeric EIP-712 v2 domain chainId (1439 / 1776).
 	evmChainID := uint64(1439)
@@ -360,6 +372,11 @@ func main() {
 	defer ws.Close()
 
 	fmt.Println("🔌 MM WebSocket connected")
+	fmt.Println("   Maker:   ", makerAddr)
+	if cometBFTEndpoint != "" {
+		fmt.Println("🔌 Subscribing to cometBFT chain...")
+		fmt.Println("   Endpoint:", cometBFTEndpoint)
+	}
 
 	// subscribe
 	sub := map[string]any{
@@ -379,42 +396,70 @@ func main() {
 
 	fmt.Println("📡 Subscribed to RFQ request stream")
 
-	for {
-		_, data, err := ws.ReadMessage()
-		if err != nil {
-			log.Println("❌ WebSocket error:", err)
-			return
-		}
+	baseCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		var msg struct {
-			Result struct {
-				Request *RfqRequest `json:"request"`
-			} `json:"result"`
-		}
+	reqCh := make(chan *RfqRequest, 100)
+	settlementCh := make(chan *pb.RFQSettlementMakerUpdate, 100)
+	errCh := make(chan error, 2)
 
-		if err := json.Unmarshal(data, &msg); err != nil {
-			continue
-		}
+	go func() {
+		for {
+			_, data, err := ws.ReadMessage()
+			if err != nil {
+				errCh <- fmt.Errorf("websocket read: %w", err)
+				return
+			}
 
-		if msg.Result.Request == nil {
-			continue
-		}
+			var msg struct {
+				Result struct {
+					Request *RfqRequest `json:"request"`
+				} `json:"result"`
+			}
 
-		req := msg.Result.Request
-		fmt.Println("\n📩 RFQ request received")
-		fmt.Printf("%+v\n", req)
+			if err := json.Unmarshal(data, &msg); err != nil {
+				continue
+			}
 
-		prices := []float64{1.2, 1.4}
-		for _, p := range prices {
-			if err := sendQuote(ws, req, p, makerAddr, mmPK, chainID, contractAddr, evmChainID); err != nil {
-				log.Println("sendQuote error:", err)
+			if msg.Result.Request != nil {
+				reqCh <- msg.Result.Request
 			}
 		}
+	}()
 
-		// Blind-quote v2 signing is not implemented in this example
-		// (the digest binds a specific taker address). Skipping the blind path.
-		if err := sendQuote(ws, nil, 1.3, makerAddr, mmPK, chainID, contractAddr, evmChainID); err != nil {
-			log.Println("send blind quote error:", err)
+	if cometBFTEndpoint != "" {
+		go func() {
+			if err := chainsettlement.StreamMakerSettlements(baseCtx, cometBFTEndpoint, contractAddr, makerAddr, settlementCh); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	for {
+		select {
+		case err := <-errCh:
+			log.Println("❌ stream error:", err)
+			return
+
+		case settlement := <-settlementCh:
+			printSettlementUpdate(settlement)
+
+		case req := <-reqCh:
+			fmt.Println("\n📩 RFQ request received")
+			fmt.Printf("%+v\n", req)
+
+			prices := []float64{1.2, 1.4}
+			for _, p := range prices {
+				if err := sendQuote(ws, req, p, makerAddr, mmPK, chainID, contractAddr, evmChainID); err != nil {
+					log.Println("sendQuote error:", err)
+				}
+			}
+
+			// Blind-quote v2 signing is not implemented in this example
+			// (the digest binds a specific taker address). Skipping the blind path.
+			if err := sendQuote(ws, nil, 1.3, makerAddr, mmPK, chainID, contractAddr, evmChainID); err != nil {
+				log.Println("send blind quote error:", err)
+			}
 		}
 	}
 }

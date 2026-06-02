@@ -36,6 +36,26 @@ from rfq_test.crypto.wallet import Wallet
 from rfq_test.exceptions import IndexerTimeoutError, IndexerValidationError
 
 
+class FIFOSet:
+    def __init__(self, limit: int):
+        self.seen: set[str] = set()
+        self.order: list[str] = []
+        self.limit = limit
+
+    def add(self, key: str) -> bool:
+        if key in self.seen:
+            return False
+
+        self.seen.add(key)
+        self.order.append(key)
+
+        if len(self.order) > self.limit:
+            oldest = self.order.pop(0)
+            self.seen.discard(oldest)
+
+        return True
+
+
 def _env_private_key() -> str:
     settings = get_settings()
     private_key = os.getenv("MM_PRIVATE_KEY") or settings.mm_private_key
@@ -130,12 +150,18 @@ async def main() -> None:
         or str(default_evm_chain_id)
     )
     ws_endpoint = os.getenv("RFQ_WS_URL") or config.indexer.ws_endpoint
+    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
 
     print("Connecting to MakerStream")
     print(f"  endpoint: {ws_endpoint}/MakerStream")
     print(f"  maker:    {wallet.inj_address}")
     print(f"  chain:    {chain_id}")
     print(f"  contract: {contract_address}")
+    if comet_bft_endpoint:
+        print("Subscribing to cometBFT chain")
+        print(f"  endpoint: {comet_bft_endpoint}")
+
+    settlements_seen = FIFOSet(5000)
 
     async with MakerStreamClient(
         ws_endpoint,
@@ -145,17 +171,58 @@ async def main() -> None:
         auth_private_key=wallet.private_key,
         auth_evm_chain_id=evm_chain_id,
         auth_contract_address=contract_address,
+        comet_bft_endpoint=comet_bft_endpoint,
+        settlement_contract_address=contract_address,
         timeout=30.0,
     ) as client:
         print("Connected. Waiting for RFQ requests.")
 
         while True:
             try:
-                request = await client.wait_for_request(timeout=60.0)
+                event = await client.get_next_event(timeout=60.0)
             except IndexerTimeoutError:
-                print("No RFQ requests in the last 60s; still listening.")
+                print("No RFQs in the last 60s; still listening.")
+                continue
+            if event is None:
+                print("No RFQs in the last 60s; still listening.")
                 continue
 
+            msg_type, data = event
+
+            if msg_type == "settlement_update":
+                if not settlements_seen.add(f"{data.taker}:{data.rfq_id}"):
+                    continue
+                print(
+                    "Settlement update:",
+                    f"rfq_id={data.rfq_id}",
+                    f"taker={data.taker}",
+                    f"direction={data.direction}",
+                    f"quantity={data.quantity}",
+                    f"margin={data.margin}",
+                    f"cid={data.cid}",
+                    f"source={client.settlement_source(data)}",
+                    f"quotes={[q.maker for q in data.quotes]}",
+                )
+                continue
+            if msg_type == "quote_update":
+                update = client._processed_quote_to_dict(data)
+                if update.get("maker") == wallet.inj_address:
+                    print(
+                        "Quote update:",
+                        f"rfq_id={update['rfq_id']}",
+                        f"status={update.get('status')}",
+                        f"executed_qty={update.get('executed_quantity')}",
+                        f"executed_margin={update.get('executed_margin')}",
+                        f"error={update.get('error')}",
+                    )
+                continue
+            if msg_type == "error":
+                print(f"Stream error: code={data.code} message={data.message_}")
+                continue
+            if msg_type != "request":
+                continue
+
+            request = client._request_to_dict(data)
             print(
                 "RFQ request:",
                 f"rfq_id={request['rfq_id']}",

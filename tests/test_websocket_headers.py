@@ -6,6 +6,12 @@ import pytest
 from google.protobuf.internal.decoder import _DecodeVarint32
 
 from rfq_test.actors.market_maker import MarketMaker
+from rfq_test.clients.chain_settlement import (
+    comet_ws_url,
+    maker_has_traded,
+    settlement_from_events,
+    settlement_to_maker_update,
+)
 from rfq_test.clients.websocket import (
     MakerStreamClient,
     TakerStreamClient,
@@ -158,6 +164,7 @@ async def test_market_maker_passes_wallet_address_to_stream_client():
             evm_chain_id=1776,
             subscribe_to_quotes_updates=True,
             subscribe_to_settlement_updates=True,
+            comet_bft_endpoint="http://comet.test",
         )
         await maker.connect()
 
@@ -169,8 +176,89 @@ async def test_market_maker_passes_wallet_address_to_stream_client():
         auth_private_key="11" * 32,
         auth_evm_chain_id=1776,
         auth_contract_address="inj1contract",
+        comet_bft_endpoint="http://comet.test",
     )
     stream_client.connect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_maker_stream_deduplicates_settlement_updates():
+    client = MakerStreamClient("wss://example.test/injective_rfq_rpc.InjectiveRfqRPC")
+    indexer_settlement = PbRFQSettlementMakerUpdate(
+        rfq_id=456,
+        taker="inj1taker",
+        cid="cid-indexer",
+    )
+    chain_settlement = PbRFQSettlementMakerUpdate(
+        rfq_id=456,
+        taker="inj1taker",
+        cid="cid-chain",
+    )
+
+    await client._queue_settlement_update(indexer_settlement, source="indexer")
+    await client._queue_settlement_update(chain_settlement, source="chain")
+
+    msg_type, queued = await client._message_queue.get()
+
+    assert msg_type == "settlement_update"
+    assert queued.cid == "cid-indexer"
+    assert client._message_queue.empty()
+
+
+def test_comet_ws_url_normalizes_endpoint():
+    assert comet_ws_url("localhost:26657") == "ws://localhost:26657/websocket"
+    assert comet_ws_url("http://localhost:26657") == "ws://localhost:26657/websocket"
+    assert (
+        comet_ws_url("https://sentry.example/rpc")
+        == "wss://sentry.example/rpc/websocket"
+    )
+
+
+def test_chain_settlement_event_converts_to_maker_update():
+    events = {
+        "tx.height": ["123"],
+        "tx.hash": ["0xtx"],
+        "wasm-rfq-accept-quote._contract_address": ["inj1contract"],
+        "wasm-rfq-accept-quote.rfq_id": ["456"],
+        "wasm-rfq-accept-quote.market_id": ["0xmarket"],
+        "wasm-rfq-accept-quote.taker": ["inj1taker"],
+        "wasm-rfq-accept-quote.direction": ["long"],
+        "wasm-rfq-accept-quote.margin": ["10"],
+        "wasm-rfq-accept-quote.quantity": ["1"],
+        "wasm-rfq-accept-quote.worst_price": ["3.5"],
+        "wasm-rfq-accept-quote.quotes": [
+            '[{"maker":"inj1maker","price":"3.4","margin":"10","quantity":"1",'
+            '"expiry":{"ts":1234567890,"h":321},"signature":"0xsig","nonce":7},'
+            '{"maker":"inj1other","price":"3.6","margin":"10","quantity":"1"}]'
+        ],
+        "wasm-rfq-accept-quote.results": [
+            '[{"maker":"inj1maker","m":"9","q":"0.9"},'
+            '{"maker":"inj1other","e":"not filled"}]'
+        ],
+        "wasm-rfq-accept-quote.unfilled_action": ['{"limit":{"price":"3.25"}}'],
+        "wasm-rfq-accept-quote.fallback_quantity": ["0.1"],
+        "wasm-rfq-accept-quote.fallback_margin": ["1"],
+        "wasm-rfq-accept-quote.cid": ["cid-456"],
+    }
+
+    settlement = settlement_from_events(events)
+    assert settlement is not None
+    assert maker_has_traded(settlement, "inj1maker")
+    assert not maker_has_traded(settlement, "inj1other")
+
+    update = settlement_to_maker_update(settlement, events)
+
+    assert update.rfq_id == 456
+    assert update.taker == "inj1taker"
+    assert update.cid == "cid-456"
+    assert update.height == 123
+    assert update.tx_hash == "0xtx"
+    assert update.unfilled_action.limit.price == "3.25"
+    assert len(update.quotes) == 2
+    assert update.quotes[0].maker == "inj1maker"
+    assert update.quotes[0].executed_quantity == "0.9"
+    assert update.quotes[0].status == "accepted"
+    assert update.quotes[1].status == "rejected"
 
 
 @pytest.mark.asyncio

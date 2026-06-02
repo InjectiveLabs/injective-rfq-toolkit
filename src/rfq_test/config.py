@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     indexer_grpc_web_url: Optional[str] = Field(default=None, alias="RFQ_GRPC_WEB_URL")
     chain_grpc_url: Optional[str] = Field(default=None, alias="CHAIN_GRPC_URL")
     chain_lcd_url: Optional[str] = Field(default=None, alias="CHAIN_LCD_URL")
+    chain_comet_bft_url: Optional[str] = Field(default=None, alias="CHAIN_COMETBFT_ENDPOINT")
     contract_address: Optional[str] = Field(default=None, alias="RFQ_CONTRACT_ADDRESS")
     evm_chain_id: Optional[int] = Field(default=None, alias="RFQ_EVM_CHAIN_ID")
     
@@ -176,6 +177,8 @@ def get_environment_config() -> EnvironmentConfig:
         config.chain.grpc_endpoint = settings.chain_grpc_url
     if settings.chain_lcd_url:
         config.chain.lcd_endpoint = settings.chain_lcd_url
+    if settings.chain_comet_bft_url:
+        config.chain.comet_bft_endpoint = settings.chain_comet_bft_url
     if settings.contract_address:
         config.contract.address = settings.contract_address
     if settings.evm_chain_id:
