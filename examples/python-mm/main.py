@@ -36,6 +36,26 @@ from rfq_test.crypto.wallet import Wallet
 from rfq_test.exceptions import IndexerTimeoutError, IndexerValidationError
 
 
+class FIFOSet:
+    def __init__(self, limit: int):
+        self.seen: set[str] = set()
+        self.order: list[str] = []
+        self.limit = limit
+
+    def add(self, key: str) -> bool:
+        if key in self.seen:
+            return False
+
+        self.seen.add(key)
+        self.order.append(key)
+
+        if len(self.order) > self.limit:
+            oldest = self.order.pop(0)
+            self.seen.discard(oldest)
+
+        return True
+
+
 def _env_private_key() -> str:
     settings = get_settings()
     private_key = os.getenv("MM_PRIVATE_KEY") or settings.mm_private_key
@@ -141,6 +161,8 @@ async def main() -> None:
         print("Subscribing to cometBFT chain")
         print(f"  endpoint: {comet_bft_endpoint}")
 
+    settlements_seen = FIFOSet(5000)
+
     async with MakerStreamClient(
         ws_endpoint,
         maker_address=wallet.inj_address,
@@ -163,6 +185,8 @@ async def main() -> None:
                 continue
 
             if msg_type == "settlement_update":
+                if not settlements_seen.add(f"{data.taker}:{data.rfq_id}"):
+                    continue
                 print(
                     "Settlement update:",
                     f"rfq_id={data.rfq_id}",

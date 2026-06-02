@@ -203,10 +203,10 @@ def _print_startup(
     price_tick: Decimal | None,
     qty_tick: Decimal | None,
     taker_address: str | None,
+    comet_bft_endpoint: str | None,
 ) -> None:
     chain_id, contract_address = config.signing_context
     evm_chain_id, _ = config.signing_context_v2
-    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
     print("RFQ mark quote loop")
     print(f"  env:      {config.environment}")
     print(f"  endpoint: {config.indexer.ws_endpoint}/MakerStream")
@@ -277,6 +277,7 @@ async def main() -> None:
     wallet = Wallet.from_private_key(mm_private_key)
     chain_id, contract_address = config.signing_context
     evm_chain_id, _ = config.signing_context_v2
+    comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
 
     edge_bps = Decimal(args.edge_bps)
     fixed_price = Decimal(args.fixed_price) if args.fixed_price is not None else None
@@ -310,6 +311,7 @@ async def main() -> None:
         price_tick=price_tick,
         qty_tick=qty_tick,
         taker_address=args.taker_address,
+        comet_bft_endpoint=comet_bft_endpoint,
     )
 
     quotes_sent = 0

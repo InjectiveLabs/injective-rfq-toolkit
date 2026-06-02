@@ -57,6 +57,26 @@ PING_INTERVAL = 10.0
 _STREAM_CLOSE = object()
 
 
+class FIFOSet:
+    def __init__(self, limit: int):
+        self.seen: set[str] = set()
+        self.order: list[str] = []
+        self.limit = limit
+
+    def add(self, key: str) -> bool:
+        if key in self.seen:
+            return False
+
+        self.seen.add(key)
+        self.order.append(key)
+
+        if len(self.order) > self.limit:
+            oldest = self.order.pop(0)
+            self.seen.discard(oldest)
+
+        return True
+
+
 def must_env(key: str) -> str:
     v = os.getenv(key)
     if not v:
@@ -296,6 +316,10 @@ def print_settlement_update(settlement, source: str) -> None:
         )
 
 
+def settlement_key(settlement) -> str:
+    return f"{settlement.taker}:{settlement.rfq_id}"
+
+
 async def main():
     grpc_endpoint = must_env("GRPC_ENDPOINT")
     mm_pk = must_env("MM_PRIVATE_KEY")
@@ -340,6 +364,7 @@ async def main():
 
     # Start background ping loop
     pinger = asyncio.create_task(ping_loop(send_queue))
+    settlements_seen = FIFOSet(5000)
     settlement_queue: asyncio.Queue = asyncio.Queue()
     settlement_stop: asyncio.Event | None = None
     settlement_task: asyncio.Task | None = None
@@ -371,7 +396,9 @@ async def main():
             done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
 
             if settlement_read is not None and settlement_read in done:
-                print_settlement_update(settlement_read.result(), source="chain")
+                settlement = settlement_read.result()
+                if settlements_seen.add(settlement_key(settlement)):
+                    print_settlement_update(settlement, source="chain")
                 settlement_read = asyncio.create_task(settlement_queue.get())
                 continue
 
@@ -446,7 +473,8 @@ async def main():
                 )
 
             elif msg_type == "settlement_update":
-                print_settlement_update(resp.settlement, source="indexer")
+                if settlements_seen.add(settlement_key(resp.settlement)):
+                    print_settlement_update(resp.settlement, source="indexer")
 
             elif msg_type == "error":
                 e = resp.error
