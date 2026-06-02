@@ -36,6 +36,15 @@ from rfq_test.crypto.wallet import Wallet
 from rfq_test.exceptions import IndexerTimeoutError, IndexerValidationError
 
 
+def stream_error_fields(error) -> tuple[str, str, str, int]:
+    return (
+        getattr(error, "code", ""),
+        getattr(error, "message_", None) or getattr(error, "message", ""),
+        getattr(error, "taker", ""),
+        getattr(error, "rfq_id", 0),
+    )
+
+
 class FIFOSet:
     def __init__(self, limit: int):
         self.seen: set[str] = set()
@@ -129,6 +138,7 @@ async def quote_request(
     print(
         "Quote sent:",
         f"rfq_id={request['rfq_id']}",
+        f"taker={ack.get('taker') if ack else request['request_address']}",
         f"price={price}",
         f"status={ack.get('status') if ack else 'unknown'}",
     )
@@ -217,7 +227,14 @@ async def main() -> None:
                     )
                 continue
             if msg_type == "error":
-                print(f"Stream error: code={data.code} message={data.message_}")
+                code, message, taker, rfq_id = stream_error_fields(data)
+                print(
+                    "Stream error:",
+                    f"code={code}",
+                    f"message={message}",
+                    f"taker={taker}",
+                    f"rfq_id={rfq_id}",
+                )
                 continue
             if msg_type != "request":
                 continue

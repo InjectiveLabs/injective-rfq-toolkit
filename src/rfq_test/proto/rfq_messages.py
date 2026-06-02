@@ -8,7 +8,7 @@ Field layouts match the injective_rfq_rpc service proto:
 - RFQRequestType: field 1 = client_id (string), field 2 = rfq_id (uint64), shifted +1
 - RFQQuoteType: fields 1-20; fields 19=maker_subaccount_nonce, 20=min_fill_quantity added in V2
 - RequestStreamAck: field 1 = rfq_id, field 2 = client_id, field 3 = status
-- QuoteStreamAck: field 1 = rfq_id, field 2 = status
+- QuoteStreamAck: field 1 = rfq_id, field 2 = status, field 3 = taker
 - ConditionalOrderInput: fields 1-20; sent inside TakerStreamRequest for TP/SL orders
 - TakerStreamRequest: field 3 = conditional_order, field 4 = conditional_order_signature,
   field 5 = conditional_order_sign_mode, field 6 = conditional_order_evm_chain_id
@@ -788,10 +788,11 @@ class RequestStreamAck:
 class QuoteStreamAck:
     """Acknowledgment for maker quote operations.
     
-    Fields: 1=rfq_id, 2=status.
+    Fields: 1=rfq_id, 2=status, 3=taker.
     """
     rfq_id: int = 0
     status: str = ""
+    taker: str = ""
 
     @classmethod
     def decode(cls, data: bytes) -> "QuoteStreamAck":
@@ -813,6 +814,8 @@ class QuoteStreamAck:
                 pos += length
                 if field_num == 2:
                     result.status = value
+                elif field_num == 3:
+                    result.taker = value
 
         return result
 
@@ -822,6 +825,9 @@ class StreamError:
     """Error message in stream."""
     code: str = ""
     message: str = ""
+    id: str = ""
+    taker: str = ""
+    rfq_id: int = 0
 
     @classmethod
     def decode(cls, data: bytes) -> "StreamError":
@@ -833,7 +839,11 @@ class StreamError:
             wire_type = tag_wire & 0x7
             pos = new_pos
 
-            if wire_type == 2:
+            if wire_type == 0:
+                value, pos = _DecodeVarint(data, pos)
+                if field_num == 5:
+                    result.rfq_id = value
+            elif wire_type == 2:
                 length, pos = _DecodeVarint32(data, pos)
                 value = data[pos:pos + length].decode("utf-8")
                 pos += length
@@ -841,6 +851,10 @@ class StreamError:
                     result.code = value
                 elif field_num == 2:
                     result.message = value
+                elif field_num == 3:
+                    result.id = value
+                elif field_num == 4:
+                    result.taker = value
 
         return result
 

@@ -105,6 +105,13 @@ function isLoopbackTarget(target: string): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 
+function formatStreamError(e: any): string {
+  const parts = [`${e.code}: ${e.message_}`];
+  if (e.taker) parts.push(`taker=${e.taker}`);
+  if (e.rfq_id) parts.push(`rfq_id=${e.rfq_id}`);
+  return parts.join(" ");
+}
+
 function sendQuote(stream: grpc.ClientDuplexStream<any, any>, request: any, price: number) {
   const expiry = Date.now() + 20_000; // 20s validity
   const priceStr = price.toString();
@@ -229,7 +236,9 @@ function main() {
       }
     } else if (msgType === "quote_ack") {
       const ack = response.quote_ack;
-      console.log(`📬 Quote ACK: rfq_id=${ack.rfq_id} status=${ack.status}`);
+      console.log(
+        `📬 Quote ACK: rfq_id=${ack.rfq_id} taker=${ack.taker} status=${ack.status}`
+      );
     } else if (msgType === "quote_update") {
       const qu = response.processed_quote;
       console.log(
@@ -245,7 +254,7 @@ function main() {
       }
     } else if (msgType === "error") {
       const e = response.error;
-      console.error(`❌ Stream error: ${e.code}: ${e.message_}`);
+      console.error(`❌ Stream error: ${formatStreamError(e)}`);
     } else {
       console.log(`Unknown message type: ${msgType}`, response);
     }

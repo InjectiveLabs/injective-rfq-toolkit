@@ -63,6 +63,18 @@ def _format_connection_closed(exc: Exception) -> str:
     return str(exc)
 
 
+def _format_stream_error(err) -> str:
+    message = getattr(err, "message_", None) or getattr(err, "message", "")
+    parts = [f"{err.code}: {message}"]
+    taker = getattr(err, "taker", "")
+    if taker:
+        parts.append(f"taker={taker}")
+    rfq_id = getattr(err, "rfq_id", 0)
+    if rfq_id:
+        parts.append(f"rfq_id={rfq_id}")
+    return " ".join(parts)
+
+
 def encode_grpc_message(message) -> bytes:
     """Encode a protobuf message with gRPC-web framing.
     
@@ -349,7 +361,7 @@ class TakerStreamClient(BaseStreamClient):
 
                 elif msg_type == "error":
                     err = response.error
-                    logger.error(f"Stream error: code={err.code} message={err.message_}")
+                    logger.error("Stream error: %s", _format_stream_error(err))
                     await self._message_queue.put(("error", err))
 
                 else:
@@ -474,7 +486,7 @@ class TakerStreamClient(BaseStreamClient):
                     return {"rfq_id": rfq_id, "status": status, "order": order}
 
                 if msg_type == "error":
-                    error_msg = f"{data.code}: {data.message_}"
+                    error_msg = _format_stream_error(data)
                     logger.warning(f"Conditional order error: {error_msg}")
                     raise IndexerValidationError(error_msg)
 
@@ -562,7 +574,7 @@ class TakerStreamClient(BaseStreamClient):
                     return response
                 
                 if msg_type == "error":
-                    error_msg = f"{data.code}: {data.message_}"
+                    error_msg = _format_stream_error(data)
                     logger.warning(f"Request error received: {error_msg}")
                     raise IndexerValidationError(error_msg)
                 
@@ -597,7 +609,7 @@ class TakerStreamClient(BaseStreamClient):
                     return {"rfq_id": data.rfq_id, "status": data.status}
                 
                 if msg_type == "error":
-                    raise IndexerValidationError(f"{data.code}: {data.message_}")
+                    raise IndexerValidationError(_format_stream_error(data))
 
                 await self._message_queue.put((msg_type, data))
                 await asyncio.sleep(0.01)
@@ -629,7 +641,7 @@ class TakerStreamClient(BaseStreamClient):
                     return self._quote_to_dict(data)
                 
                 if msg_type == "error":
-                    raise IndexerValidationError(f"{data.code}: {data.message}")
+                    raise IndexerValidationError(_format_stream_error(data))
                 
                 await self._message_queue.put((msg_type, data))
                 await asyncio.sleep(0.01)
@@ -976,7 +988,7 @@ class MakerStreamClient(BaseStreamClient):
 
                 elif msg_type == "error":
                     err = response.error
-                    logger.error(f"Stream error: code={err.code} message={err.message_}")
+                    logger.error("Stream error: %s", _format_stream_error(err))
                     await self._message_queue.put(("error", err))
                 
                 else:
@@ -1088,12 +1100,18 @@ class MakerStreamClient(BaseStreamClient):
                         "type": "ack",
                         "rfq_id": data.rfq_id,
                         "status": data.status,
+                        "taker": getattr(data, "taker", ""),
                     }
-                    logger.info(f"Quote ACK received: RFQ#{data.rfq_id} status={data.status}")
+                    logger.info(
+                        "Quote ACK received: RFQ#%s taker=%s status=%s",
+                        data.rfq_id,
+                        getattr(data, "taker", ""),
+                        data.status,
+                    )
                     return response
                 
                 if msg_type == "error":
-                    error_msg = f"{data.code}: {data.message_}"
+                    error_msg = _format_stream_error(data)
                     logger.warning(f"Quote error received: {error_msg}")
                     raise IndexerValidationError(error_msg)
                 
@@ -1166,7 +1184,7 @@ class MakerStreamClient(BaseStreamClient):
                     return req
 
                 if msg_type == "error":
-                    raise IndexerValidationError(f"{data.code}: {data.message_}")
+                    raise IndexerValidationError(_format_stream_error(data))
 
                 await self._message_queue.put((msg_type, data))
                 await asyncio.sleep(0.01)
@@ -1196,7 +1214,7 @@ class MakerStreamClient(BaseStreamClient):
                 if msg_type == "request":
                     yield self._request_to_dict(data)
                 elif msg_type == "error":
-                    logger.error(f"Stream error: {data.code}: {data.message_}")
+                    logger.error("Stream error: %s", _format_stream_error(data))
                 else:
                     await self._message_queue.put((msg_type, data))
                     
@@ -1224,7 +1242,7 @@ class MakerStreamClient(BaseStreamClient):
                     return self._processed_quote_to_dict(data)
 
                 if msg_type == "error":
-                    raise IndexerValidationError(f"{data.code}: {data.message}")
+                    raise IndexerValidationError(_format_stream_error(data))
 
                 await self._message_queue.put((msg_type, data))
                 await asyncio.sleep(0.01)
@@ -1247,7 +1265,7 @@ class MakerStreamClient(BaseStreamClient):
                     return self._settlement_to_dict(data)
 
                 if msg_type == "error":
-                    raise IndexerValidationError(f"{data.code}: {data.message}")
+                    raise IndexerValidationError(_format_stream_error(data))
 
                 await self._message_queue.put((msg_type, data))
                 await asyncio.sleep(0.01)

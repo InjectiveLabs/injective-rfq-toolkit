@@ -57,6 +57,15 @@ PING_INTERVAL = 10.0
 _STREAM_CLOSE = object()
 
 
+def stream_error_fields(error) -> tuple[str, str, str, int]:
+    return (
+        getattr(error, "code", ""),
+        getattr(error, "message_", None) or getattr(error, "message", ""),
+        getattr(error, "taker", ""),
+        getattr(error, "rfq_id", 0),
+    )
+
+
 class FIFOSet:
     def __init__(self, limit: int):
         self.seen: set[str] = set()
@@ -465,7 +474,7 @@ async def main():
             elif msg_type == "quote_ack":
                 ack = resp.quote_ack
                 print(
-                    f"📬 Quote ACK: rfq_id={ack.rfq_id} status={ack.status}"
+                    f"📬 Quote ACK: rfq_id={ack.rfq_id} taker={ack.taker} status={ack.status}"
                 )
 
             elif msg_type == "quote_update":
@@ -480,7 +489,14 @@ async def main():
 
             elif msg_type == "error":
                 e = resp.error
-                print(f"❌ Stream error: {e.code}: {e.message_}")
+                code, message, taker, rfq_id = stream_error_fields(e)
+                print(
+                    "❌ Stream error:",
+                    f"code={code}",
+                    f"message={message}",
+                    f"taker={taker}",
+                    f"rfq_id={rfq_id}",
+                )
 
             else:
                 print(f"Unknown message type: {msg_type}")
