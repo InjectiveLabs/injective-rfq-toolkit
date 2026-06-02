@@ -34,7 +34,6 @@ from rfq_test.config import get_environment_config, get_settings
 from rfq_test.crypto.eip712 import sign_quote_v2
 from rfq_test.crypto.wallet import Wallet
 from rfq_test.exceptions import IndexerTimeoutError, IndexerValidationError
-from chain_settlement import stream_maker_settlements
 
 
 def _env_private_key() -> str:
@@ -115,32 +114,6 @@ async def quote_request(
     )
 
 
-async def print_chain_settlements(
-    endpoint: str,
-    contract_address: str,
-    maker_address: str,
-) -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    subscriber = asyncio.create_task(
-        stream_maker_settlements(endpoint, contract_address, maker_address, queue)
-    )
-    try:
-        while True:
-            settlement = await queue.get()
-            print(
-                "Settlement update:",
-                f"rfq_id={settlement.rfq_id}",
-                f"taker={settlement.taker}",
-                f"direction={settlement.direction}",
-                f"quantity={settlement.quantity}",
-                f"margin={settlement.margin}",
-                f"cid={settlement.cid}",
-                f"quotes={[q.maker for q in settlement.quotes]}",
-            )
-    finally:
-        subscriber.cancel()
-
-
 async def main() -> None:
     config = get_environment_config()
     mm_private_key = _env_private_key()
@@ -176,53 +149,71 @@ async def main() -> None:
         auth_private_key=wallet.private_key,
         auth_evm_chain_id=evm_chain_id,
         auth_contract_address=contract_address,
+        comet_bft_endpoint=comet_bft_endpoint,
+        settlement_contract_address=contract_address,
         timeout=30.0,
     ) as client:
-        settlement_task = (
-            asyncio.create_task(
-                print_chain_settlements(
-                    comet_bft_endpoint,
-                    contract_address,
-                    wallet.inj_address,
-                )
-            )
-            if comet_bft_endpoint
-            else None
-        )
         print("Connected. Waiting for RFQ requests.")
 
-        try:
-            while True:
-                try:
-                    request = await client.wait_for_request(timeout=60.0)
-                except IndexerTimeoutError:
-                    print("No RFQ requests in the last 60s; still listening.")
-                    continue
+        while True:
+            try:
+                msg_type, data = await client.get_next_event(timeout=60.0)
+            except IndexerTimeoutError:
+                print("No RFQs in the last 60s; still listening.")
+                continue
 
+            if msg_type == "settlement_update":
                 print(
-                    "RFQ request:",
-                    f"rfq_id={request['rfq_id']}",
-                    f"market={request['market_id']}",
-                    f"direction={request['direction']}",
-                    f"margin={request['margin']}",
-                    f"quantity={request['quantity']}",
-                    f"worst_price={request['worst_price']}",
+                    "Settlement update:",
+                    f"rfq_id={data.rfq_id}",
+                    f"taker={data.taker}",
+                    f"direction={data.direction}",
+                    f"quantity={data.quantity}",
+                    f"margin={data.margin}",
+                    f"cid={data.cid}",
+                    f"quotes={[q.maker for q in data.quotes]}",
                 )
-
-                try:
-                    await quote_request(
-                        client=client,
-                        request=request,
-                        wallet=wallet,
-                        chain_id=chain_id,
-                        contract_address=contract_address,
-                        evm_chain_id=evm_chain_id,
+                continue
+            if msg_type == "quote_update":
+                update = client._processed_quote_to_dict(data)
+                if update.get("maker") == wallet.inj_address:
+                    print(
+                        "Quote update:",
+                        f"rfq_id={update['rfq_id']}",
+                        f"status={update.get('status')}",
+                        f"executed_qty={update.get('executed_quantity')}",
+                        f"executed_margin={update.get('executed_margin')}",
+                        f"error={update.get('error')}",
                     )
-                except IndexerValidationError as exc:
-                    print(f"Quote rejected by indexer: {exc}")
-        finally:
-            if settlement_task is not None:
-                settlement_task.cancel()
+                continue
+            if msg_type == "error":
+                print(f"Stream error: code={data.code} message={data.message_}")
+                continue
+            if msg_type != "request":
+                continue
+
+            request = client._request_to_dict(data)
+            print(
+                "RFQ request:",
+                f"rfq_id={request['rfq_id']}",
+                f"market={request['market_id']}",
+                f"direction={request['direction']}",
+                f"margin={request['margin']}",
+                f"quantity={request['quantity']}",
+                f"worst_price={request['worst_price']}",
+            )
+
+            try:
+                await quote_request(
+                    client=client,
+                    request=request,
+                    wallet=wallet,
+                    chain_id=chain_id,
+                    contract_address=contract_address,
+                    evm_chain_id=evm_chain_id,
+                )
+            except IndexerValidationError as exc:
+                print(f"Quote rejected by indexer: {exc}")
 
 
 if __name__ == "__main__":

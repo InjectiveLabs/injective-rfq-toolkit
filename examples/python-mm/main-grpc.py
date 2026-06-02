@@ -47,7 +47,7 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
     RFQQuoteType,
 )
 from rfq_test.proto.injective_rfq_rpc_pb2_grpc import InjectiveRfqRPCStub
-from chain_settlement import stream_maker_settlements
+from rfq_test.clients.chain_settlement import stream_maker_settlements
 
 dotenv.load_dotenv()
 
@@ -338,14 +338,17 @@ async def main():
     # Start background ping loop
     pinger = asyncio.create_task(ping_loop(send_queue))
     settlement_queue: asyncio.Queue = asyncio.Queue()
+    settlement_stop: asyncio.Event | None = None
     settlement_task: asyncio.Task | None = None
     if comet_bft_endpoint:
+        settlement_stop = asyncio.Event()
         settlement_task = asyncio.create_task(
             stream_maker_settlements(
                 comet_bft_endpoint,
                 contract_address,
                 maker_addr,
                 settlement_queue,
+                settlement_stop,
             )
         )
 
@@ -455,6 +458,8 @@ async def main():
         pass
     finally:
         pinger.cancel()
+        if settlement_stop is not None:
+            settlement_stop.set()
         if settlement_task is not None:
             settlement_task.cancel()
         await send_queue.put(_STREAM_CLOSE)
