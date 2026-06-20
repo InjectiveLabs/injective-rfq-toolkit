@@ -128,7 +128,7 @@ The harness reads `TESTNET_MM_PRIVATE_KEY`, `TESTNET_RETAIL_PRIVATE_KEY`, and (f
 
 ```bash
 python scripts/setup_authz_grants.py   # both MM and retail wallets need this
-python scripts/register_makers.py      # admin-only; or ask your TrueCurrent contact
+python scripts/register_makers.py      # admin-only
 python scripts/fund_subaccounts.py     # USDC margin into the maker/retail subaccounts
 ```
 

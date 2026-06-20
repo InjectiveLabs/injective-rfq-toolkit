@@ -1,7 +1,7 @@
 """Multi-quote aggregation example: one taker collects quotes from N makers
 and accepts several of them in a single AcceptQuote transaction.
 
-The TrueCurrent contract's `quotes` field is a Vec<Quote>, and the handler
+The RFQ contract's `quotes` field is a Vec<Quote>, and the handler
 walks the list in submission order, filling from each until the taker's
 total `quantity` is covered. This lets a taker aggregate partial fills
 across multiple makers into a single atomic position.
