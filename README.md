@@ -175,27 +175,6 @@ pytest                   # everything except `load`
 
 ---
 
-## Environment configuration
-
-| Item | Testnet | Mainnet |
-|------|---------|---------|
-| Cosmos chain ID | `injective-888` | `injective-1` |
-| EVM chain ID (EIP-712 domain) | `1439` | `1776` |
-| RFQ Contract | `inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk` | `inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k`<br/>takes effect June 3 |
-| MakerStream WSS | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/MakerStream` |
-| TakerStream WSS | `wss://rfq.ws.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` | `wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC/TakerStream` |
-| Indexer gRPC-web | `https://rfq.grpc-web.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC` | `https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC` |
-| Indexer gRPC | `rfq.grpc.testnet.injective.network:443` | `rfq.grpc.injective.network:443` |
-| Chain gRPC | `testnet.sentry.chain.grpc.injective.network:443` | `sentry.chain.grpc.injective.network:443` |
-| LCD | `https://testnet.sentry.lcd.injective.network` | `https://sentry.lcd.injective.network` |
-| Faucet | `https://rfq.inj.so/api/faucet` | n/a |
-
-YAML defaults live in `configs/{env}.yaml`; override individual fields via env vars when running against a bespoke deployment.
-
-`chain_id` / `CHAIN_ID` is always the Cosmos chain ID (`injective-888` on testnet, `injective-1` on mainnet). Do not pass the numeric EVM chain ID there; `1776` belongs only in `evm_chain_id` / `EVM_CHAIN_ID` and the EIP-712 domain.
-
----
-
 ## Protocol cheat-sheet
 
 The RFQ Indexer uses **gRPC-web over WebSocket** with protobuf framing. Two streams — `TakerStream` and `MakerStream` — and a settlement path that goes directly to the CosmWasm contract on Injective.
@@ -261,21 +240,6 @@ Cancellation is on-chain via `ContractClient.cancel_intent_lane(market_id, subac
 
 Reference: [PYTHON_BUILDING_GUIDE.md § Conditional Orders](PYTHON_BUILDING_GUIDE.md#conditional-orders-tpsl), `scripts/conditional_order_example.py`.
 
-### Supported markets (testnet)
-
-| Symbol | Market ID | Tick (price + qty) |
-|--------|-----------|--------------------|
-| INJ/USDC PERP  | `0xdc70164d7120529c3cd84278c98df4151210c0447a65a2aab03459cf328de41e` | `0.01` |
-| BTC/USDC PERP  | `0xfd704649cf3a516c0c145ab0111717c44640d8dbe52a462ae35cadf2f6df1515` | `1` |
-| LINK/USDC PERP | `0xdbb9bb072015238096f6e821ee9aab7affd741f8662a71acc14ac30ee6b687a5` | `0.01` |
-| ETH/USDC PERP  | `0x135de28700392fb1c17d40d5170a74f30055a4ad522feddafec42fbbbb780897` | `0.01` |
-
-All four use USDC margin: `erc20:0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d`.
-
-Always run decimal fields through `quantize_for_fpdecimal` before signing — *the wire string must equal the signed string byte-for-byte*. The most common rejection is `price "76462.0": not in canonical decimal form` (BTC perp at tick `1`).
-
----
-
 ## Regenerating proto code
 
 After editing `src/rfq_test/proto/injective_rfq_rpc.proto`:
@@ -294,4 +258,4 @@ Overwrites `injective_rfq_rpc_pb2.py` and `injective_rfq_rpc_pb2_grpc.py`. After
 
 ## License
 
-See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

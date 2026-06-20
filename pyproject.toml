@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "rfq-e2e-tests"
 version = "0.1.0"
 description = "E2E and Load Testing Framework for RFQ System"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 
 dependencies = [
