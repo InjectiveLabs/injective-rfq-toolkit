@@ -6,8 +6,6 @@
 > 1. **`pip install -e .`** and import `rfq_test` to build a Python bot on top of `MakerStreamClient`, `sign_quote_v2`, etc.
 > 2. **Clone the gRPC examples** in `examples/{python,go,ts}-mm/main-grpc.*` as a starting point in their language of choice.
 > 3. **Run the test harness** against testnet to verify their own integrations end-to-end.
->
-> It is not yet a packaged SDK with semver, PyPI/npm distribution, or formal multi-language API parity — see [§ Roadmap to SDK](#roadmap-to-sdk) at the bottom for what changes between "toolkit" and "SDK".
 
 **Companion guides:**
 - [PYTHON_BUILDING_GUIDE.md](PYTHON_BUILDING_GUIDE.md) — full protocol walkthrough for teams that want to build standalone (no `rfq_test` dependency)
@@ -291,34 +289,6 @@ After editing `src/rfq_test/proto/injective_rfq_rpc.proto`:
 ```
 
 Overwrites `injective_rfq_rpc_pb2.py` and `injective_rfq_rpc_pb2_grpc.py`. After regen, review field/type changes (especially `evm_chain_id` field numbers, nested `Expiry`, and the `MakerChallenge` / `MakerAuth` shapes) and update `clients/websocket.py` if needed. `grpcio-tools` is a dev extra (`pip install -e ".[dev]"`).
-
----
-
-## Roadmap to SDK
-
-`injective-rfq-toolkit` is *almost* an SDK already — clean import surface, stable digest primitives, and reference implementations across three languages. The gap is packaging, naming hygiene, and stability commitments. Concrete steps to close it:
-
-1. **Carve the SDK out of the toolkit.** Today everything lives under one umbrella. Split the repo internally so the published artifact is just the integration kit and the harness ships separately:
-   - Rename the Python distribution from `rfq-e2e-tests` (in `pyproject.toml`) to `injective-rfq` (the *package* name). Keep the import as `rfq_test` for one release with a deprecation warning, then move it to `rfq` to match.
-   - Move `tests/`, `factories/`, `utils/scenario.py`, and the pytest plumbing into a `[harness]` extra (or a sibling repo `injective-rfq-toolkit-tests`) so `pip install injective-rfq` ships only what an integrator needs.
-   - Keep `actors/` if we promote it to public orchestration helpers; otherwise move it to the harness extra too.
-
-2. **Publish.** Cut `0.1.0` to PyPI as `injective-rfq`. Adopt **semver** with a deprecation policy ("two minor releases of warning before removal") and gate every public symbol behind an explicit `__all__`. Add `py.typed` and ship full type hints in the wheel.
-
-3. **Multi-language parity.** Today `examples/go-mm/main-grpc/main.go` and `examples/ts-mm/main-grpc.ts` are scripts. Promote them to first-class SDKs with the same surface as Python:
-   - **Go** — `github.com/InjectiveLabs/injective-rfq-go` with `MakerStreamClient`, `TakerStreamClient`, `SignQuoteV2`, `SignConditionalOrderV2`, `SignMakerChallengeV2`, generated proto vendored.
-   - **TypeScript** — `@injectivelabs/injective-rfq` on npm. Use `protobuf-ts` or `connect-es` so it works in Node and the browser. Same surface.
-   - **Conformance:** all three languages must produce byte-identical digests for the same inputs. We already have `rfq-contract/contracts/rfq/src/test/go/eip712crosscheck/` as the seed of a cross-language test; lift that into a shared CI matrix that runs Python ↔ Go ↔ TS round-trips on every PR.
-
-4. **Public API boundary.** Mark every leading-underscore symbol as truly private (some are reachable today). Add an `rfq.types` re-export module so partners don't import from `models.types` directly. Generate API reference docs from docstrings — Sphinx+autodoc or `mkdocs-material` + `mkdocstrings` are both fine. Cross-link from rfq.inj.so to the published reference.
-
-5. **Versioned protocol contract.** Move `injective_rfq_rpc.proto` into a stable home — either its own `github.com/InjectiveLabs/injective-rfq-proto` repo or as a top-level `proto/` directory inside this toolkit, versioned independently of the language SDKs. All three SDKs vendor the same release tag; a `sign_mode` or wire-field change becomes one coordinated proto bump rather than three drifting regens.
-
-6. **Maintenance contract.** Pin the support matrix (Python 3.11+, Go 1.22+, Node 20+). Set a release cadence (every 2–4 weeks for non-breaking, immediate for security). Wire `examples/*` end-to-end into CI against staging testnet so a regression breaks our build, not a partner's bot. Add a security-disclosure policy.
-
-7. **Migration story.** Once `injective-rfq` is on PyPI, the `injective-rfq-toolkit` repo becomes a *meta-repo* that bundles: the SDK source (Python), the harness, the gRPC reference scripts in all three languages, and the proto definitions. Partners who only want the SDK install from PyPI/npm/pkg.go.dev. Partners who want the full developer experience clone the toolkit. Both work.
-
-Until those land, "toolkit" is the honest framing. Once #1–4 ship, we drop the qualifier and start pointing partners at the package registries instead of `git clone`.
 
 ---
 
