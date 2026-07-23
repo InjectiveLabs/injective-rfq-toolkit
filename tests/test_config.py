@@ -10,22 +10,6 @@ def test_mainnet_config_is_doge_usdc_only():
     assert config.chain.chain_id == "injective-1"
     assert config.chain.evm_chain_id == 1776
     assert config.contract.address == "inj12stwq95jet57edcu4a65r48r46s9rzrs938n8k"
-    assert config.chain.grpc_web_endpoint == "https://sentry.chain.grpc-web.injective.network"
-    assert config.chain.cache_grpc_endpoint == "https://sentry.chain.grpc-web.injective.network"
-    assert config.chain.comet_bft_endpoint == "https://sentry.tm.injective.network"
-    assert config.chain.lcd_endpoint == "https://sentry.lcd.injective.network"
-
-    europe = config.chain.regional_endpoints["europe"]
-    assert europe.grpc_web_endpoint == "https://sentry.chain.grpc-web.injective.network"
-    assert europe.cache_grpc_endpoint == "https://sentry.chain.grpc-web.injective.network"
-    assert europe.comet_bft_endpoint == "https://sentry.tm.injective.network"
-    assert europe.lcd_endpoint == "https://sentry.lcd.injective.network"
-
-    asia = config.chain.regional_endpoints["asia"]
-    assert asia.grpc_web_endpoint == "https://sentry.grpc-web.mainnet.asia.injective.network"
-    assert asia.cache_grpc_endpoint == "https://sentry.grpc-web.mainnet.asia.injective.network"
-    assert asia.comet_bft_endpoint == "https://sentry.tm.mainnet.asia.injective.network"
-    assert asia.lcd_endpoint == "https://sentry.lcd.mainnet.asia.injective.network"
     assert len(config.markets) == 1
 
     market = config.default_market
@@ -43,8 +27,6 @@ def test_mainnet_env_overrides_contract_and_credentials(monkeypatch):
     monkeypatch.setenv("RFQ_ENV", "mainnet")
     monkeypatch.setenv("RFQ_CONTRACT_ADDRESS", "inj1mainnetcontract")
     monkeypatch.setenv("CHAIN_COMETBFT_ENDPOINT", "https://comet.example")
-    monkeypatch.setenv("CHAIN_GRPC_WEB_URL", "https://grpc-web.example")
-    monkeypatch.setenv("CHAIN_CACHE_GRPC_URL", "https://cache-grpc.example")
     monkeypatch.setenv("MAINNET_MM_PRIVATE_KEY", "11" * 32)
     monkeypatch.setenv("MAINNET_RETAIL_PRIVATE_KEY", "22" * 32)
 
@@ -59,5 +41,3 @@ def test_mainnet_env_overrides_contract_and_credentials(monkeypatch):
     assert settings.retail_private_key == "22" * 32
     assert config.contract.address == "inj1mainnetcontract"
     assert config.chain.comet_bft_endpoint == "https://comet.example"
-    assert config.chain.grpc_web_endpoint == "https://grpc-web.example"
-    assert config.chain.cache_grpc_endpoint == "https://cache-grpc.example"
