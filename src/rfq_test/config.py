@@ -69,8 +69,10 @@ class Settings(BaseSettings):
     indexer_grpc_url: Optional[str] = Field(default=None, alias="RFQ_GRPC_URL")
     indexer_grpc_web_url: Optional[str] = Field(default=None, alias="RFQ_GRPC_WEB_URL")
     chain_grpc_url: Optional[str] = Field(default=None, alias="CHAIN_GRPC_URL")
+    chain_grpc_web_url: Optional[str] = Field(default=None, alias="CHAIN_GRPC_WEB_URL")
     chain_lcd_url: Optional[str] = Field(default=None, alias="CHAIN_LCD_URL")
     chain_comet_bft_url: Optional[str] = Field(default=None, alias="CHAIN_COMETBFT_ENDPOINT")
+    chain_cache_grpc_url: Optional[str] = Field(default=None, alias="CHAIN_CACHE_GRPC_URL")
     contract_address: Optional[str] = Field(default=None, alias="RFQ_CONTRACT_ADDRESS")
     evm_chain_id: Optional[int] = Field(default=None, alias="RFQ_EVM_CHAIN_ID")
     
@@ -159,7 +161,10 @@ def get_environment_config() -> EnvironmentConfig:
     - RFQ_WS_URL: Override WebSocket endpoint
     - RFQ_HTTP_URL: Override HTTP endpoint
     - CHAIN_GRPC_URL: Override chain gRPC endpoint
+    - CHAIN_GRPC_WEB_URL: Override chain gRPC-web endpoint
     - CHAIN_LCD_URL: Override chain LCD endpoint
+    - CHAIN_COMETBFT_ENDPOINT: Override chain Tendermint RPC endpoint
+    - CHAIN_CACHE_GRPC_URL: Override cache gRPC endpoint
     """
     settings = get_settings()
     config = load_environment_config(settings.rfq_env)
@@ -175,10 +180,14 @@ def get_environment_config() -> EnvironmentConfig:
         config.indexer.grpc_web_endpoint = settings.indexer_grpc_web_url
     if settings.chain_grpc_url:
         config.chain.grpc_endpoint = settings.chain_grpc_url
+    if settings.chain_grpc_web_url:
+        config.chain.grpc_web_endpoint = settings.chain_grpc_web_url
     if settings.chain_lcd_url:
         config.chain.lcd_endpoint = settings.chain_lcd_url
     if settings.chain_comet_bft_url:
         config.chain.comet_bft_endpoint = settings.chain_comet_bft_url
+    if settings.chain_cache_grpc_url:
+        config.chain.cache_grpc_endpoint = settings.chain_cache_grpc_url
     if settings.contract_address:
         config.contract.address = settings.contract_address
     if settings.evm_chain_id:
