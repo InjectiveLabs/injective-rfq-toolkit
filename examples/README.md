@@ -104,6 +104,11 @@ See `.env.example` for required configuration:
 | `CHAIN_ID` | Cosmos chain ID for transactions and RFQ wire payloads (`injective-888` testnet, `injective-1` mainnet); not the numeric EVM chain ID |
 | `EVM_CHAIN_ID` | EIP-712 domain chain ID for quote signatures (`1439` testnet, `1776` mainnet) |
 | `GRPC_ENDPOINT` | gRPC endpoint (e.g. `localhost:9910`) — required for gRPC examples |
+| `CHAIN_GRPC_URL` | Override chain native gRPC endpoint for config-driven Python examples |
+| `CHAIN_GRPC_WEB_URL` | Override chain gRPC-web endpoint for config-driven Python examples |
+| `CHAIN_LCD_URL` | Override chain LCD/REST endpoint for config-driven Python examples |
+| `CHAIN_COMETBFT_ENDPOINT` | Override chain Tendermint RPC endpoint for config-driven Python examples |
+| `CHAIN_CACHE_GRPC_URL` | Override cache gRPC endpoint for config-driven Python examples |
 | `RFQ_CONTRACT_ADDRESS` | Override RFQ contract address for config-driven Python examples |
 | `RFQ_ENV` | Environment to load: `local`, `testnet`, or `mainnet` |
 
