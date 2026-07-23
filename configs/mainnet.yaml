@@ -6,26 +6,12 @@ chain:
   grpc_exchange_endpoint: "sentry.exchange.grpc.injective.network:443"
   grpc_explorer_endpoint: "sentry.explorer.grpc.injective.network:443"
   chain_stream_endpoint: "sentry.chain.stream.injective.network:443"
-  grpc_web_endpoint: "https://sentry.chain.grpc-web.injective.network"
-  cache_grpc_endpoint: "https://sentry.chain.grpc-web.injective.network"
-  comet_bft_endpoint: "https://sentry.tm.injective.network"
   lcd_endpoint: "https://sentry.lcd.injective.network"
   chain_id: "injective-1"
   # EVM chain ID for the EIP-712 v2 domain separator (NOT the cosmos chain_id).
   # Testnet is 1439; mainnet is 1776.
   evm_chain_id: 1776
   tx_timeout_seconds: 20
-  regional_endpoints:
-    europe:
-      grpc_web_endpoint: "https://sentry.chain.grpc-web.injective.network"
-      cache_grpc_endpoint: "https://sentry.chain.grpc-web.injective.network"
-      comet_bft_endpoint: "https://sentry.tm.injective.network"
-      lcd_endpoint: "https://sentry.lcd.injective.network"
-    asia:
-      grpc_web_endpoint: "https://sentry.grpc-web.mainnet.asia.injective.network"
-      cache_grpc_endpoint: "https://sentry.grpc-web.mainnet.asia.injective.network"
-      comet_bft_endpoint: "https://sentry.tm.mainnet.asia.injective.network"
-      lcd_endpoint: "https://sentry.lcd.mainnet.asia.injective.network"
 
 indexer:
   ws_endpoint: "wss://rfq.ws.injective.network/injective_rfq_rpc.InjectiveRfqRPC"

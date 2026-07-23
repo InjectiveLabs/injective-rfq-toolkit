@@ -6,16 +6,6 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ChainRegionalEndpoints(BaseModel):
-    """Regional chain API endpoints."""
-    model_config = ConfigDict(extra="forbid")
-
-    grpc_web_endpoint: str
-    lcd_endpoint: str
-    comet_bft_endpoint: str
-    cache_grpc_endpoint: str
-
-
 class ChainConfig(BaseModel):
     """Chain connection configuration."""
     model_config = ConfigDict(extra="forbid")
@@ -32,9 +22,6 @@ class ChainConfig(BaseModel):
     grpc_explorer_endpoint: Optional[str] = None
     chain_stream_endpoint: Optional[str] = None
     comet_bft_endpoint: Optional[str] = None
-    grpc_web_endpoint: Optional[str] = None
-    cache_grpc_endpoint: Optional[str] = None
-    regional_endpoints: dict[str, ChainRegionalEndpoints] = Field(default_factory=dict)
 
 
 class IndexerConfig(BaseModel):
