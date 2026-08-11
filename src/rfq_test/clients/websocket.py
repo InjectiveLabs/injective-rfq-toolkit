@@ -390,19 +390,23 @@ class TakerStreamClient(BaseStreamClient):
                         await self._message_queue.put(("challenge", challenge))
                         continue
 
-                    evm_chain_id = int(challenge.evm_chain_id)
-                    signature = sign_taker_challenge_v1(
-                        private_key=self._auth_private_key,
-                        evm_chain_id=evm_chain_id,
-                        verifying_contract_bech32=self._auth_contract_address,
-                        taker=self._request_address,
-                        nonce_hex=challenge.nonce,
-                        expires_at=int(challenge.expires_at),
-                    )
-                    auth_msg = TakerStreamStreamingRequest(
-                        message_type="auth",
-                        auth=TakerAuth(evm_chain_id=evm_chain_id, signature=signature),
-                    )
+                    try:
+                        evm_chain_id = int(challenge.evm_chain_id)
+                        signature = sign_taker_challenge_v1(
+                            private_key=self._auth_private_key,
+                            evm_chain_id=evm_chain_id,
+                            verifying_contract_bech32=self._auth_contract_address,
+                            taker=self._request_address,
+                            nonce_hex=challenge.nonce,
+                            expires_at=int(challenge.expires_at),
+                        )
+                        auth_msg = TakerStreamStreamingRequest(
+                            message_type="auth",
+                            auth=TakerAuth(evm_chain_id=evm_chain_id, signature=signature),
+                        )
+                    except (ValueError, OverflowError) as exc:
+                        logger.error("Failed to answer TakerStream auth challenge: %s", exc)
+                        continue
                     logger.info("Answering TakerStream auth challenge")
                     await self._send_raw(encode_grpc_message(auth_msg))
 

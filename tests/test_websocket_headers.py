@@ -174,6 +174,57 @@ async def test_taker_stream_answers_auth_challenge_and_queues_result():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("signing_error", [ValueError("invalid nonce"), OverflowError("expiry")])
+async def test_taker_stream_continues_after_auth_signing_error(signing_error, caplog):
+    challenge_response = TakerStreamResponse(
+        message_type="challenge",
+        challenge=TakerChallenge(
+            nonce="invalid",
+            evm_chain_id=1439,
+            expires_at=1772851186901,
+        ),
+    )
+    result_response = TakerStreamResponse(
+        message_type="auth_result",
+        auth_result=TakerAuthResult(
+            authenticated=False,
+            code="invalid_signature",
+            message_="authentication failed",
+        ),
+    )
+    fake_ws = SimpleNamespace(
+        recv=AsyncMock(
+            side_effect=[
+                encode_grpc_message(challenge_response),
+                encode_grpc_message(result_response),
+                asyncio.CancelledError(),
+            ]
+        ),
+        send=AsyncMock(),
+    )
+    client = TakerStreamClient(
+        "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+        request_address="inj1taker",
+        auth_private_key="0x" + "11" * 32,
+        auth_contract_address="inj1contract",
+    )
+    client._connected = True
+    client._ws = fake_ws
+
+    with patch("rfq_test.clients.websocket.sign_taker_challenge_v1", side_effect=signing_error):
+        await client._receive_loop()
+
+    fake_ws.send.assert_not_awaited()
+    assert fake_ws.recv.await_count == 3
+    assert "Failed to answer TakerStream auth challenge" in caplog.text
+    assert await client.wait_for_auth_result() == {
+        "authenticated": False,
+        "code": "invalid_signature",
+        "message": "authentication failed",
+    }
+
+
+@pytest.mark.asyncio
 async def test_maker_stream_sends_supported_metadata_headers():
     fake_ws = FakeWebSocket()
     connect_mock = AsyncMock(return_value=fake_ws)
