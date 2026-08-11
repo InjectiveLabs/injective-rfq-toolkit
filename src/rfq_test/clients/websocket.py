@@ -140,7 +140,9 @@ class BaseStreamClient(ABC):
         """Full WebSocket URL."""
         return f"{self.base_url}{self.stream_path}"
 
-    def _additional_headers(self) -> Optional[dict[str, str]]:
+    def _additional_headers(
+        self,
+    ) -> Optional[dict[str, str] | list[tuple[str, str]]]:
         """Optional WebSocket handshake headers for stream metadata."""
         return None
     
@@ -752,6 +754,7 @@ class MakerStreamClient(BaseStreamClient):
         comet_bft_endpoint: Optional[str] = None,
         settlement_contract_address: Optional[str] = None,
         timeout: float = 10.0,
+        market_ids: Optional[list[str]] = None,
     ):
         """Initialize Maker stream client.
 
@@ -767,9 +770,12 @@ class MakerStreamClient(BaseStreamClient):
             settlement_contract_address: RFQ contract address used in the chain event query.
                 Defaults to auth_contract_address.
             timeout: Default timeout for operations
+            market_ids: Only receive RFQ requests for these market IDs. An empty
+                list subscribes to all markets.
         """
         super().__init__(base_url, timeout=timeout)
         self._maker_address = maker_address
+        self._market_ids = tuple(market_ids or ())
         self._subscribe_to_quotes_updates = subscribe_to_quotes_updates
         self._subscribe_to_settlement_updates = subscribe_to_settlement_updates
         self._auth_private_key = auth_private_key
@@ -805,7 +811,9 @@ class MakerStreamClient(BaseStreamClient):
     def stream_path(self) -> str:
         return "/MakerStream"
 
-    def _additional_headers(self) -> Optional[dict[str, str]]:
+    def _additional_headers(
+        self,
+    ) -> Optional[dict[str, str] | list[tuple[str, str]]]:
         """gRPC-web metadata supported by the maker stream handshake."""
         headers: dict[str, str] = {}
         if self._maker_address:
@@ -814,6 +822,11 @@ class MakerStreamClient(BaseStreamClient):
             headers["subscribe_to_quotes_updates"] = "true"
         if self._subscribe_to_settlement_updates:
             headers["subscribe_to_settlement_updates"] = "true"
+        if self._market_ids:
+            return [
+                *headers.items(),
+                *(("market_ids", market_id) for market_id in self._market_ids),
+            ]
         return headers or None
 
     def _start_chain_settlement_stream(self) -> None:

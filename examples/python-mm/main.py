@@ -161,10 +161,12 @@ async def main() -> None:
     )
     ws_endpoint = os.getenv("RFQ_WS_URL") or config.indexer.ws_endpoint
     comet_bft_endpoint = os.getenv("CHAIN_COMETBFT_ENDPOINT")
+    market_ids = [market.id for market in config.markets[:2]]
 
     print("Connecting to MakerStream")
     print(f"  endpoint: {ws_endpoint}/MakerStream")
     print(f"  maker:    {wallet.inj_address}")
+    print(f"  markets:  {market_ids}")
     print(f"  chain:    {chain_id}")
     print(f"  contract: {contract_address}")
     if comet_bft_endpoint:
@@ -176,6 +178,7 @@ async def main() -> None:
     async with MakerStreamClient(
         ws_endpoint,
         maker_address=wallet.inj_address,
+        market_ids=market_ids,
         subscribe_to_quotes_updates=True,
         subscribe_to_settlement_updates=True,
         auth_private_key=wallet.private_key,

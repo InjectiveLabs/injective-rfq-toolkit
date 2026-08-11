@@ -217,6 +217,7 @@ from rfq_test.clients.websocket import MakerStreamClient
 mm_client = MakerStreamClient(
     ws_url,
     maker_address=maker_inj_address,
+    market_ids=[inj_usdc_market_id, btc_usdc_market_id],  # only these markets
     subscribe_to_quotes_updates=True,           # quote_update events
     subscribe_to_settlement_updates=True,       # settlement_update events
     auth_private_key=maker_private_key,         # auto-signs MakerChallenge
@@ -224,6 +225,8 @@ mm_client = MakerStreamClient(
     auth_contract_address=contract_address,
 )
 ```
+
+Omit `market_ids` (or pass an empty list) to receive requests from every market.
 
 Update event semantics:
 - `quote_ack status="success"` only means the indexer accepted and routed the quote. There is intentionally no later "not accepted" event; if no update arrives before the maker-set `expiry`, treat the quote as not accepted by the taker.

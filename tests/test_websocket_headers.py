@@ -111,6 +111,29 @@ async def test_maker_stream_sends_supported_metadata_headers():
 
 
 @pytest.mark.asyncio
+async def test_maker_stream_sends_each_market_id_as_repeated_metadata():
+    fake_ws = FakeWebSocket()
+    connect_mock = AsyncMock(return_value=fake_ws)
+
+    with patch("rfq_test.clients.websocket.websockets.connect", connect_mock), patch(
+        "rfq_test.clients.websocket.asyncio.create_task",
+        side_effect=lambda coro: DummyTask(coro),
+    ):
+        client = MakerStreamClient(
+            "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+            maker_address="inj1maker",
+            market_ids=["0xmarket1", "0xmarket2"],
+        )
+        await client.connect()
+
+    assert connect_mock.await_args.kwargs["additional_headers"] == [
+        ("maker_address", "inj1maker"),
+        ("market_ids", "0xmarket1"),
+        ("market_ids", "0xmarket2"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_maker_stream_answers_auth_challenge():
     challenge = MakerChallenge(
         nonce="0x" + "22" * 32,
