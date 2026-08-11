@@ -20,6 +20,7 @@ from rfq_test.clients.websocket import (
 )
 from rfq_test.factories.request import RequestFactory
 from rfq_test.proto.injective_rfq_rpc_pb2 import (
+    ConditionalOrderResponseType as PbConditionalOrderResponseType,
     MakerChallenge,
     MakerStreamResponse,
     MakerStreamStreamingRequest,
@@ -39,6 +40,8 @@ from rfq_test.proto.rfq_messages import (
     RFQSettlementLimitActionType,
     RFQSettlementMakerUpdate,
     RFQSettlementType,
+    TakerAuth as ManualTakerAuth,
+    TakerStreamResponse as ManualTakerStreamResponse,
     TakerStreamRequest,
     _encode_message,
     _encode_string,
@@ -537,6 +540,53 @@ def test_taker_stream_request_encodes_conditional_order_evm_chain_id():
             raise AssertionError(f"Unexpected wire type {wire_type} for field {field_num}")
 
     assert evm_chain_id == 1439
+
+
+def test_manual_taker_stream_request_encodes_auth_field_seven():
+    request = TakerStreamRequest(
+        message_type="auth",
+        auth=ManualTakerAuth(evm_chain_id=1439, signature="0xsig"),
+    )
+
+    decoded = TakerStreamStreamingRequest.FromString(request.encode())
+
+    assert decoded.message_type == "auth"
+    assert decoded.auth.evm_chain_id == 1439
+    assert decoded.auth.signature == "0xsig"
+
+
+def test_manual_taker_stream_response_decodes_fields_six_through_eight():
+    response = TakerStreamResponse(
+        message_type="auth_result",
+        conditional_order=PbConditionalOrderResponseType(
+            rfq_id=7,
+            market_id="0xmarket",
+        ),
+        challenge=TakerChallenge(
+            nonce="0xnonce",
+            evm_chain_id=1439,
+            expires_at=1772851186901,
+        ),
+        auth_result=TakerAuthResult(
+            authenticated=True,
+            code="success",
+            message_="taker stream authenticated",
+        ),
+    )
+
+    decoded = ManualTakerStreamResponse.decode(response.SerializeToString())
+
+    assert decoded.conditional_order is not None
+    assert decoded.conditional_order.rfq_id == 7
+    assert decoded.conditional_order.market_id == "0xmarket"
+    assert decoded.challenge is not None
+    assert decoded.challenge.nonce == "0xnonce"
+    assert decoded.challenge.evm_chain_id == 1439
+    assert decoded.challenge.expires_at == 1772851186901
+    assert decoded.auth_result is not None
+    assert decoded.auth_result.authenticated is True
+    assert decoded.auth_result.code == "success"
+    assert decoded.auth_result.message_ == "taker stream authenticated"
 
 
 @pytest.mark.asyncio
