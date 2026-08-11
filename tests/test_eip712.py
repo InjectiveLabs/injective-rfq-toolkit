@@ -5,8 +5,10 @@ from rfq_test.crypto.eip712 import (
     sign_maker_challenge_v2,
     sign_quote_digest,
     sign_quote_v2,
+    sign_taker_challenge_v1,
     signed_taker_intent_digest,
     stream_auth_challenge_digest,
+    taker_stream_auth_challenge_digest,
 )
 
 
@@ -135,5 +137,27 @@ def test_stream_auth_challenge_v2_matches_reference():
         "0x724f3ebc4d4f6c75165514f86796bb021cde12de70f00242e51556e047e3c15d"
         "06eb3ace5d88af86989badc4b4ca3e0405f54c4d60b1e8562727c008bd347f0d01"
     )
+    assert bytes.fromhex(signature[2:])[-1] in (0, 1)
+    assert Account._recover_hash(digest, signature=bytes.fromhex(signature[2:])) == ETH_ADDRESS
+
+
+def test_taker_stream_auth_challenge_v1_uses_unbound_signer():
+    digest = taker_stream_auth_challenge_digest(
+        evm_chain_id=1439,
+        verifying_contract_bech32=CONTRACT,
+        taker_bech32=ADDRESS,
+        nonce_hex="0x" + "22" * 32,
+        expires_at=1772851186901,
+    )
+    signature = sign_taker_challenge_v1(
+        private_key=PRIVATE_KEY,
+        evm_chain_id=1439,
+        verifying_contract_bech32=CONTRACT,
+        taker=ADDRESS,
+        nonce_hex="0x" + "22" * 32,
+        expires_at=1772851186901,
+    )
+
+    assert len(digest) == 32
     assert bytes.fromhex(signature[2:])[-1] in (0, 1)
     assert Account._recover_hash(digest, signature=bytes.fromhex(signature[2:])) == ETH_ADDRESS

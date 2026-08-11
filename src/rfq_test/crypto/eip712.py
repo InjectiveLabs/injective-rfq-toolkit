@@ -67,6 +67,12 @@ STREAM_AUTH_CHALLENGE_TYPE = (
     b"StreamAuthChallenge(uint64 evmChainId,address maker,bytes32 nonce,uint64 expiresAt)"
 )
 
+# The toolkit intentionally exposes only the unbound TakerStream authentication
+# flow. Keep the server's complete typed-data schema opaque here and pin its hash.
+TAKER_STREAM_AUTH_CHALLENGE_TYPE_HASH = bytes.fromhex(
+    "d9ab487f4905880d82f555dd72613fab2737f909822b69f851f02db265ed9d53"
+)
+
 # --- Constants ---------------------------------------------------------
 
 DIRECTION_LONG = 0
@@ -334,6 +340,31 @@ def stream_auth_challenge_digest(
     return _final_digest(domain_sep, keccak(msg))
 
 
+def taker_stream_auth_challenge_digest(
+    *,
+    evm_chain_id: int,
+    verifying_contract_bech32: str,
+    taker_bech32: str,
+    nonce_hex: str,
+    expires_at: int,
+) -> bytes:
+    """Compute the 32-byte EIP-712 digest for TakerStream auth v1."""
+    nonce = bytes.fromhex(nonce_hex.removeprefix("0x"))
+    if len(nonce) != 32:
+        raise ValueError(f"expected 32-byte nonce, got {len(nonce)}")
+
+    msg = b"".join((
+        TAKER_STREAM_AUTH_CHALLENGE_TYPE_HASH,
+        _enc_u64(evm_chain_id),
+        _enc_addr(bech32_to_evm(taker_bech32)),
+        _enc_zero_addr(),
+        nonce,
+        _enc_u64(expires_at),
+    ))
+    domain_sep = domain_separator(evm_chain_id, verifying_contract_bech32)
+    return _final_digest(domain_sep, keccak(msg))
+
+
 # --- Signing -----------------------------------------------------------
 
 def _normalize_pk(private_key: str) -> bytes:
@@ -476,6 +507,26 @@ def sign_maker_challenge_v2(
         evm_chain_id=evm_chain_id,
         verifying_contract_bech32=verifying_contract_bech32,
         maker_bech32=maker,
+        nonce_hex=nonce_hex,
+        expires_at=expires_at,
+    )
+    return _sign_digest(digest, private_key)
+
+
+def sign_taker_challenge_v1(
+    *,
+    private_key: str,
+    evm_chain_id: int,
+    verifying_contract_bech32: str,
+    taker: str,
+    nonce_hex: str,
+    expires_at: int,
+) -> str:
+    """Sign a TakerStream auth v1 challenge and return `0x` + r||s||v hex."""
+    digest = taker_stream_auth_challenge_digest(
+        evm_chain_id=evm_chain_id,
+        verifying_contract_bech32=verifying_contract_bech32,
+        taker_bech32=taker,
         nonce_hex=nonce_hex,
         expires_at=expires_at,
     )

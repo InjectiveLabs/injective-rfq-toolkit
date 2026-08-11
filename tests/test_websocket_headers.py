@@ -26,6 +26,10 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
     RFQExpiryType as PbRFQExpiryType,
     RFQSettlementMakerUpdate as PbRFQSettlementMakerUpdate,
     RFQSettlementQuote as PbRFQSettlementQuote,
+    TakerAuthResult,
+    TakerChallenge,
+    TakerStreamResponse,
+    TakerStreamStreamingRequest,
 )
 from rfq_test.proto.rfq_messages import (
     CreateRFQRequestType,
@@ -87,6 +91,86 @@ async def test_taker_stream_sends_request_address_header():
 
 
 @pytest.mark.asyncio
+async def test_taker_stream_sends_auth_metadata_headers():
+    fake_ws = FakeWebSocket()
+    connect_mock = AsyncMock(return_value=fake_ws)
+
+    with patch("rfq_test.clients.websocket.websockets.connect", connect_mock), patch(
+        "rfq_test.clients.websocket.asyncio.create_task",
+        side_effect=lambda coro: DummyTask(coro),
+    ):
+        client = TakerStreamClient(
+            "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+            request_address="inj1taker",
+            auth_private_key="0x" + "11" * 32,
+            auth_contract_address="inj1contract",
+        )
+        await client.connect()
+
+    assert connect_mock.await_args.kwargs["additional_headers"] == {
+        "request_address": "inj1taker",
+        "auth_version": "v1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_taker_stream_answers_auth_challenge_and_queues_result():
+    challenge = TakerChallenge(
+        nonce="0x" + "22" * 32,
+        evm_chain_id=1439,
+        expires_at=1772851186901,
+    )
+    challenge_response = TakerStreamResponse(message_type="challenge", challenge=challenge)
+    result_response = TakerStreamResponse(
+        message_type="auth_result",
+        auth_result=TakerAuthResult(
+            authenticated=True,
+            code="success",
+            message_="taker stream authenticated",
+        ),
+    )
+    fake_ws = SimpleNamespace(
+        recv=AsyncMock(
+            side_effect=[
+                encode_grpc_message(challenge_response),
+                encode_grpc_message(result_response),
+                asyncio.CancelledError(),
+            ]
+        ),
+        send=AsyncMock(),
+    )
+    client = TakerStreamClient(
+        "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+        request_address="inj1taker",
+        auth_private_key="0x" + "11" * 32,
+        auth_contract_address="inj1contract",
+    )
+    client._connected = True
+    client._ws = fake_ws
+
+    with patch("rfq_test.clients.websocket.sign_taker_challenge_v1", return_value="0xsig") as sign:
+        await client._receive_loop()
+
+    sign.assert_called_once_with(
+        private_key="0x" + "11" * 32,
+        evm_chain_id=1439,
+        verifying_contract_bech32="inj1contract",
+        taker="inj1taker",
+        nonce_hex="0x" + "22" * 32,
+        expires_at=1772851186901,
+    )
+    sent = decode_grpc_message(fake_ws.send.await_args.args[0], TakerStreamStreamingRequest)
+    assert sent.message_type == "auth"
+    assert sent.auth.evm_chain_id == 1439
+    assert sent.auth.signature == "0xsig"
+    assert await client.wait_for_auth_result() == {
+        "authenticated": True,
+        "code": "success",
+        "message": "taker stream authenticated",
+    }
+
+
+@pytest.mark.asyncio
 async def test_maker_stream_sends_supported_metadata_headers():
     fake_ws = FakeWebSocket()
     connect_mock = AsyncMock(return_value=fake_ws)
@@ -108,6 +192,29 @@ async def test_maker_stream_sends_supported_metadata_headers():
         "subscribe_to_quotes_updates": "true",
         "subscribe_to_settlement_updates": "true",
     }
+
+
+@pytest.mark.asyncio
+async def test_maker_stream_sends_each_market_id_as_repeated_metadata():
+    fake_ws = FakeWebSocket()
+    connect_mock = AsyncMock(return_value=fake_ws)
+
+    with patch("rfq_test.clients.websocket.websockets.connect", connect_mock), patch(
+        "rfq_test.clients.websocket.asyncio.create_task",
+        side_effect=lambda coro: DummyTask(coro),
+    ):
+        client = MakerStreamClient(
+            "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+            maker_address="inj1maker",
+            market_ids=["0xmarket1", "0xmarket2"],
+        )
+        await client.connect()
+
+    assert connect_mock.await_args.kwargs["additional_headers"] == [
+        ("maker_address", "inj1maker"),
+        ("market_ids", "0xmarket1"),
+        ("market_ids", "0xmarket2"),
+    ]
 
 
 @pytest.mark.asyncio

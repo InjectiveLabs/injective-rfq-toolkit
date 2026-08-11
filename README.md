@@ -185,6 +185,13 @@ The RFQ Indexer uses **gRPC-web over WebSocket** with protobuf framing. Two stre
 - **Signing:** **EIP-712 v2** typed-data digest → secp256k1 raw → `0x` + `r ‖ s ‖ v` (v=0/1, **not** 27/28). Custom layout, *not* `eth_signTypedData_v4`. Spec in [`crypto/eip712.py`](src/rfq_test/crypto/eip712.py); recipe in [PYTHON_BUILDING_GUIDE.md § Quote Signing (v2)](PYTHON_BUILDING_GUIDE.md#quote-signing-v2).
 - **Wire-required fields:** every quote and conditional-order create carries `sign_mode="v2"` and `evm_chain_id` (`1439` testnet, `1776` mainnet). Missing or empty values are rejected. Keep `chain_id` as the Cosmos string (`injective-888` / `injective-1`); do not put `1439` or `1776` in `chain_id`.
 - **MakerStream auth handshake:** the first server message after a maker connects is a `MakerChallenge`. Sign the `StreamAuthChallenge` typed-data and reply with `MakerAuth{evm_chain_id, signature}`. `MakerStreamClient` does this for you when you pass `auth_private_key` + `auth_evm_chain_id` + `auth_contract_address`. Standalone implementations in `examples/{python,go,ts}-mm/main-grpc.*`. Full protocol: [PYTHON_BUILDING_GUIDE.md § MakerStream Auth Handshake](PYTHON_BUILDING_GUIDE.md#makerstream-auth-handshake).
+- **TakerStream auth handshake:** pass `request_address`, `auth_private_key`, and `auth_contract_address` to `TakerStreamClient`. It requests auth v1, signs the server challenge with the taker key, and exposes the result through `wait_for_auth_result()`. Authentication failure is informational and does not close the stream.
+
+Test only the taker handshake against testnet (this does not submit an RFQ):
+
+```bash
+RFQ_ENV=testnet PYTHONPATH=src python scripts/probe_taker_auth.py
+```
 
 ### Production timing lessons
 
@@ -217,6 +224,7 @@ from rfq_test.clients.websocket import MakerStreamClient
 mm_client = MakerStreamClient(
     ws_url,
     maker_address=maker_inj_address,
+    market_ids=[inj_usdc_market_id, btc_usdc_market_id],  # only these markets
     subscribe_to_quotes_updates=True,           # quote_update events
     subscribe_to_settlement_updates=True,       # settlement_update events
     auth_private_key=maker_private_key,         # auto-signs MakerChallenge
@@ -224,6 +232,8 @@ mm_client = MakerStreamClient(
     auth_contract_address=contract_address,
 )
 ```
+
+Omit `market_ids` (or pass an empty list) to receive requests from every market.
 
 Update event semantics:
 - `quote_ack status="success"` only means the indexer accepted and routed the quote. There is intentionally no later "not accepted" event; if no update arrives before the maker-set `expiry`, treat the quote as not accepted by the taker.
