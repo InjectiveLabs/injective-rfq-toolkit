@@ -153,6 +153,7 @@ class MarketMaker:
         
         # Extract request data (indexer may send direction as 0/1, "long"/"short", or "Long"/"Short")
         rfq_id = request["rfq_id"]
+        unique_rfq_id = request.get("unique_rfq_id", "")
         market_id = request["market_id"]
         taker = request.get("taker") or request.get("request_address", "")
         raw_direction = request["direction"]
@@ -234,7 +235,9 @@ class MarketMaker:
         if self.chain_id is not None:
             quote_data["chain_id"] = self.chain_id
         
-        logger.info(f"Sending quote for RFQ#{rfq_id}: price={price}")
+        logger.info(
+            f"Sending quote for RFQ#{rfq_id} (uid={unique_rfq_id or '-'}): price={price}"
+        )
         await self._ws_client.send_quote(quote_data)
         
         return quote_data
