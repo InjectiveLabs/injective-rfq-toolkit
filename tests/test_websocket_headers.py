@@ -581,23 +581,24 @@ def test_unique_rfq_id_decoded_across_maker_messages():
     assert processed.unique_rfq_id == "inj1taker:999"
     assert client._processed_quote_to_dict(processed)["unique_rfq_id"] == "inj1taker:999"
 
+
+def test_settlement_update_does_not_carry_unique_rfq_id():
+    client = MakerStreamClient("wss://example.test/injective_rfq_rpc.InjectiveRfqRPC")
+
     settlement = RFQSettlementMakerUpdate.decode(
         _encode_uint64(1, 999)
         + _encode_string(2, "0xmarket")
         + _encode_string(3, "inj1taker")
-        + _encode_string(51, "inj1taker:999")
     )
-    assert settlement.unique_rfq_id == "inj1taker:999"
-    assert client._settlement_to_dict(settlement)["unique_rfq_id"] == "inj1taker:999"
+    assert not hasattr(settlement, "unique_rfq_id")
+    assert "unique_rfq_id" not in client._settlement_to_dict(settlement)
 
 
 def test_unique_rfq_id_defaults_empty_when_absent():
     client = MakerStreamClient("wss://example.test/injective_rfq_rpc.InjectiveRfqRPC")
 
-    settlement = RFQSettlementType.decode(
-        _encode_uint64(1, 999) + _encode_string(2, "0xmarket")
-    )
-    assert client._settlement_to_dict(settlement)["unique_rfq_id"] == ""
-
     request = RFQRequestType.decode(_encode_uint64(2, 999))
     assert client._request_to_dict(request)["unique_rfq_id"] == ""
+
+    ack = QuoteStreamAck.decode(_encode_uint64(1, 999))
+    assert ack.unique_rfq_id == ""

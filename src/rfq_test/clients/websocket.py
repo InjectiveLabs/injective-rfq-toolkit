@@ -1323,7 +1323,6 @@ class MakerStreamClient(BaseStreamClient):
         """Convert settlement protobuf to dict."""
         return {
             "rfq_id": str(settlement.rfq_id),
-            "unique_rfq_id": getattr(settlement, "unique_rfq_id", ""),
             "market_id": settlement.market_id,
             "taker": settlement.taker,
             "direction": settlement.direction,
