@@ -1104,9 +1104,8 @@ class MakerStreamClient(BaseStreamClient):
                         "taker": getattr(data, "taker", ""),
                     }
                     logger.info(
-                        "Quote ACK received: RFQ#%s uid=%s taker=%s status=%s",
+                        "Quote ACK received: RFQ#%s taker=%s status=%s",
                         data.rfq_id,
-                        getattr(data, "unique_rfq_id", "") or "-",
                         getattr(data, "taker", ""),
                         data.status,
                     )

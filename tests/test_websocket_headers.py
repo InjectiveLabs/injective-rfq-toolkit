@@ -560,35 +560,35 @@ def test_unique_rfq_id_decoded_across_maker_messages():
         _encode_string(1, "client-1")
         + _encode_uint64(2, 999)
         + _encode_string(3, "0xmarket")
-        + _encode_string(15, "uuid-request")
+        + _encode_string(15, "inj1taker:999")
     )
-    assert request.unique_rfq_id == "uuid-request"
-    assert client._request_to_dict(request)["unique_rfq_id"] == "uuid-request"
+    assert request.unique_rfq_id == "inj1taker:999"
+    assert client._request_to_dict(request)["unique_rfq_id"] == "inj1taker:999"
 
     ack = QuoteStreamAck.decode(
         _encode_uint64(1, 999)
         + _encode_string(2, "success")
         + _encode_string(3, "inj1taker")
-        + _encode_string(4, "uuid-ack")
+        + _encode_string(4, "inj1taker:999")
     )
-    assert ack.unique_rfq_id == "uuid-ack"
+    assert ack.unique_rfq_id == "inj1taker:999"
 
     processed = RFQProcessedQuoteType.decode(
         _encode_uint64(4, 999)
         + _encode_string(13, "accepted")
-        + _encode_string(53, "uuid-quote")
+        + _encode_string(53, "inj1taker:999")
     )
-    assert processed.unique_rfq_id == "uuid-quote"
-    assert client._processed_quote_to_dict(processed)["unique_rfq_id"] == "uuid-quote"
+    assert processed.unique_rfq_id == "inj1taker:999"
+    assert client._processed_quote_to_dict(processed)["unique_rfq_id"] == "inj1taker:999"
 
     settlement = RFQSettlementMakerUpdate.decode(
         _encode_uint64(1, 999)
         + _encode_string(2, "0xmarket")
         + _encode_string(3, "inj1taker")
-        + _encode_string(51, "uuid-settlement")
+        + _encode_string(51, "inj1taker:999")
     )
-    assert settlement.unique_rfq_id == "uuid-settlement"
-    assert client._settlement_to_dict(settlement)["unique_rfq_id"] == "uuid-settlement"
+    assert settlement.unique_rfq_id == "inj1taker:999"
+    assert client._settlement_to_dict(settlement)["unique_rfq_id"] == "inj1taker:999"
 
 
 def test_unique_rfq_id_defaults_empty_when_absent():
