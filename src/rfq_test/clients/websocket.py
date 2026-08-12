@@ -1099,6 +1099,7 @@ class MakerStreamClient(BaseStreamClient):
                     response = {
                         "type": "ack",
                         "rfq_id": data.rfq_id,
+                        "unique_rfq_id": getattr(data, "unique_rfq_id", ""),
                         "status": data.status,
                         "taker": getattr(data, "taker", ""),
                     }
@@ -1279,6 +1280,7 @@ class MakerStreamClient(BaseStreamClient):
         return {
             "client_id": request.client_id,
             "rfq_id": str(request.rfq_id),
+            "unique_rfq_id": request.unique_rfq_id,
             "market_id": request.market_id,
             "direction": request.direction,
             "margin": request.margin,
@@ -1294,6 +1296,7 @@ class MakerStreamClient(BaseStreamClient):
         """Convert processed quote protobuf to dict."""
         return {
             "rfq_id": str(quote.rfq_id),
+            "unique_rfq_id": quote.unique_rfq_id,
             "chain_id": quote.chain_id,
             "contract_address": quote.contract_address,
             "market_id": quote.market_id,
@@ -1320,6 +1323,7 @@ class MakerStreamClient(BaseStreamClient):
         """Convert settlement protobuf to dict."""
         return {
             "rfq_id": str(settlement.rfq_id),
+            "unique_rfq_id": getattr(settlement, "unique_rfq_id", ""),
             "market_id": settlement.market_id,
             "taker": settlement.taker,
             "direction": settlement.direction,

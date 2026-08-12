@@ -8,7 +8,12 @@ Field layouts match the injective_rfq_rpc service proto:
 - RFQRequestType: field 1 = client_id (string), field 2 = rfq_id (uint64), shifted +1
 - RFQQuoteType: fields 1-20; fields 19=maker_subaccount_nonce, 20=min_fill_quantity added in V2
 - RequestStreamAck: field 1 = rfq_id, field 2 = client_id, field 3 = status
-- QuoteStreamAck: field 1 = rfq_id, field 2 = status, field 3 = taker
+- QuoteStreamAck: field 1 = rfq_id, field 2 = status, field 3 = taker, field 4 = unique_rfq_id
+- unique_rfq_id is the canonical request identity "taker:rfq_id", added to the four maker
+  stream messages: RFQRequestType=15, QuoteStreamAck=4, RFQProcessedQuoteType=53,
+  RFQSettlementMakerUpdate=51. Both parts are already present on each of those messages,
+  so this is a convenience only. Empty on settlements sourced from CometBFT rather than
+  the gRPC stream, since those are built locally from chain events.
 - ConditionalOrderInput: fields 1-20; sent inside TakerStreamRequest for TP/SL orders
 - TakerStreamRequest: field 3 = conditional_order, field 4 = conditional_order_signature,
   field 5 = conditional_order_sign_mode, field 6 = conditional_order_evm_chain_id
@@ -181,10 +186,12 @@ class RFQRequestType:
     
     Fields: 1=client_id, 2=rfq_id, 3=market_id, 4=direction, 5=margin,
     6=quantity, 7=worst_price, 8=request_address, 9=expiry, 10=status,
-    11=created_at, 12=updated_at, 13=transaction_time, 14=height.
+    11=created_at, 12=updated_at, 13=transaction_time, 14=height,
+    15=unique_rfq_id.
     """
     client_id: str = ""
     rfq_id: int = 0
+    unique_rfq_id: str = ""
     market_id: str = ""
     direction: str = ""
     margin: str = ""
@@ -243,10 +250,10 @@ class RFQRequestType:
                     result.worst_price = value
                 elif field_num == 8:
                     result.request_address = value
-                elif field_num == 9:
-                    result.expiry = _decode_expiry_submessage(value_bytes)
                 elif field_num == 10:
                     result.status = value
+                elif field_num == 15:
+                    result.unique_rfq_id = value
 
         return result
 
@@ -384,6 +391,7 @@ class RFQProcessedQuoteType:
     error: str = ""
     executed_quantity: str = ""
     executed_margin: str = ""
+    unique_rfq_id: str = ""
     market_id: str = ""
     rfq_id: int = 0
     taker_direction: str = ""
@@ -464,6 +472,8 @@ class RFQProcessedQuoteType:
                     result.executed_quantity = value
                 elif field_num == 52:
                     result.executed_margin = value
+                elif field_num == 53:
+                    result.unique_rfq_id = value
 
         return result
 
@@ -681,10 +691,12 @@ class RFQSettlementQuote:
 class RFQSettlementMakerUpdate(RFQSettlementType):
     """Settlement update delivered inside MakerStreamResponse.
 
-    This extends RFQSettlementType with field 50=repeated RFQSettlementQuote.
+    This extends RFQSettlementType with field 50=repeated RFQSettlementQuote
+    and field 51=unique_rfq_id.
     """
 
     quotes: list[RFQSettlementQuote] = field(default_factory=list)
+    unique_rfq_id: str = ""
 
     @classmethod
     def decode(cls, data: bytes) -> "RFQSettlementMakerUpdate":
@@ -743,6 +755,8 @@ class RFQSettlementMakerUpdate(RFQSettlementType):
                     result.cid = value
                 elif field_num == 17:
                     result.tx_hash = value
+                elif field_num == 51:
+                    result.unique_rfq_id = value
 
         return result
 
@@ -788,11 +802,12 @@ class RequestStreamAck:
 class QuoteStreamAck:
     """Acknowledgment for maker quote operations.
     
-    Fields: 1=rfq_id, 2=status, 3=taker.
+    Fields: 1=rfq_id, 2=status, 3=taker, 4=unique_rfq_id.
     """
     rfq_id: int = 0
     status: str = ""
     taker: str = ""
+    unique_rfq_id: str = ""
 
     @classmethod
     def decode(cls, data: bytes) -> "QuoteStreamAck":
@@ -816,6 +831,8 @@ class QuoteStreamAck:
                     result.status = value
                 elif field_num == 3:
                     result.taker = value
+                elif field_num == 4:
+                    result.unique_rfq_id = value
 
         return result
 

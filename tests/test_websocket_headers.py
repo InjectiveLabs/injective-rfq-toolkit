@@ -30,7 +30,9 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
 from rfq_test.proto.rfq_messages import (
     CreateRFQRequestType,
     MakerStreamResponse as ManualMakerStreamResponse,
+    QuoteStreamAck,
     RFQProcessedQuoteType,
+    RFQRequestType,
     RFQQuoteType,
     RFQSettlementLimitActionType,
     RFQSettlementMakerUpdate,
@@ -549,3 +551,53 @@ def test_maker_stream_response_decodes_maker_settlement_update_quotes():
     assert quote.executed_quantity == "0.9"
     assert quote.expiry.timestamp == 1234567890
     assert quote.expiry.height == 321
+
+
+def test_unique_rfq_id_decoded_across_maker_messages():
+    client = MakerStreamClient("wss://example.test/injective_rfq_rpc.InjectiveRfqRPC")
+
+    request = RFQRequestType.decode(
+        _encode_string(1, "client-1")
+        + _encode_uint64(2, 999)
+        + _encode_string(3, "0xmarket")
+        + _encode_string(15, "inj1taker:999")
+    )
+    assert request.unique_rfq_id == "inj1taker:999"
+    assert client._request_to_dict(request)["unique_rfq_id"] == "inj1taker:999"
+
+    ack = QuoteStreamAck.decode(
+        _encode_uint64(1, 999)
+        + _encode_string(2, "success")
+        + _encode_string(3, "inj1taker")
+        + _encode_string(4, "inj1taker:999")
+    )
+    assert ack.unique_rfq_id == "inj1taker:999"
+
+    processed = RFQProcessedQuoteType.decode(
+        _encode_uint64(4, 999)
+        + _encode_string(13, "accepted")
+        + _encode_string(53, "inj1taker:999")
+    )
+    assert processed.unique_rfq_id == "inj1taker:999"
+    assert client._processed_quote_to_dict(processed)["unique_rfq_id"] == "inj1taker:999"
+
+    settlement = RFQSettlementMakerUpdate.decode(
+        _encode_uint64(1, 999)
+        + _encode_string(2, "0xmarket")
+        + _encode_string(3, "inj1taker")
+        + _encode_string(51, "inj1taker:999")
+    )
+    assert settlement.unique_rfq_id == "inj1taker:999"
+    assert client._settlement_to_dict(settlement)["unique_rfq_id"] == "inj1taker:999"
+
+
+def test_unique_rfq_id_defaults_empty_when_absent():
+    client = MakerStreamClient("wss://example.test/injective_rfq_rpc.InjectiveRfqRPC")
+
+    settlement = RFQSettlementType.decode(
+        _encode_uint64(1, 999) + _encode_string(2, "0xmarket")
+    )
+    assert client._settlement_to_dict(settlement)["unique_rfq_id"] == ""
+
+    request = RFQRequestType.decode(_encode_uint64(2, 999))
+    assert client._request_to_dict(request)["unique_rfq_id"] == ""
