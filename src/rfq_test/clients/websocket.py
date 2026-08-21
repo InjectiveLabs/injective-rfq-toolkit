@@ -312,7 +312,8 @@ class TakerStreamClient(BaseStreamClient):
             request_address: Taker's Injective address (required by indexer as stream metadata)
             timeout: Default timeout for operations
             auth_private_key: Private key controlling request_address. When set,
-                the client requests and automatically answers taker auth v1.
+                the client requests and automatically answers taker auth v1. It
+                may also be an authorized Authz grantee key.
             auth_contract_address: Verifying contract used by the RFQ EIP-712 domain.
         """
         super().__init__(base_url, timeout=timeout)
@@ -391,10 +392,8 @@ class TakerStreamClient(BaseStreamClient):
                         continue
 
                     try:
-                        evm_chain_id = int(challenge.evm_chain_id)
                         signature = sign_taker_challenge_v1(
                             private_key=self._auth_private_key,
-                            evm_chain_id=evm_chain_id,
                             verifying_contract_bech32=self._auth_contract_address,
                             taker=self._request_address,
                             nonce_hex=challenge.nonce,
@@ -402,7 +401,7 @@ class TakerStreamClient(BaseStreamClient):
                         )
                         auth_msg = TakerStreamStreamingRequest(
                             message_type="auth",
-                            auth=TakerAuth(evm_chain_id=evm_chain_id, signature=signature),
+                            auth=TakerAuth(signature=signature),
                         )
                     except (ValueError, OverflowError) as exc:
                         logger.error("Failed to answer TakerStream auth challenge: %s", exc)
@@ -456,6 +455,7 @@ class TakerStreamClient(BaseStreamClient):
                         "authenticated": bool(data.authenticated),
                         "code": data.code,
                         "message": data.message_,
+                        "nonce": data.nonce,
                     }
                 deferred.append((msg_type, data))
         finally:

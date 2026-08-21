@@ -33,7 +33,7 @@ async def main() -> int:
     print(
         "Taker authentication: "
         f"authenticated={result['authenticated']} code={result['code']} "
-        f"message={result['message']}"
+        f"nonce={result['nonce'] or 'not returned'} message={result['message']}"
     )
     return 0 if result["authenticated"] else 1
 

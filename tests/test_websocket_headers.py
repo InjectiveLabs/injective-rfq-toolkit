@@ -120,7 +120,6 @@ async def test_taker_stream_sends_auth_metadata_headers():
 async def test_taker_stream_answers_auth_challenge_and_queues_result():
     challenge = TakerChallenge(
         nonce="0x" + "22" * 32,
-        evm_chain_id=1439,
         expires_at=1772851186901,
     )
     challenge_response = TakerStreamResponse(message_type="challenge", challenge=challenge)
@@ -130,6 +129,7 @@ async def test_taker_stream_answers_auth_challenge_and_queues_result():
             authenticated=True,
             code="success",
             message_="taker stream authenticated",
+            nonce="0x" + "22" * 32,
         ),
     )
     fake_ws = SimpleNamespace(
@@ -156,7 +156,6 @@ async def test_taker_stream_answers_auth_challenge_and_queues_result():
 
     sign.assert_called_once_with(
         private_key="0x" + "11" * 32,
-        evm_chain_id=1439,
         verifying_contract_bech32="inj1contract",
         taker="inj1taker",
         nonce_hex="0x" + "22" * 32,
@@ -164,12 +163,12 @@ async def test_taker_stream_answers_auth_challenge_and_queues_result():
     )
     sent = decode_grpc_message(fake_ws.send.await_args.args[0], TakerStreamStreamingRequest)
     assert sent.message_type == "auth"
-    assert sent.auth.evm_chain_id == 1439
     assert sent.auth.signature == "0xsig"
     assert await client.wait_for_auth_result() == {
         "authenticated": True,
         "code": "success",
         "message": "taker stream authenticated",
+        "nonce": "0x" + "22" * 32,
     }
 
 
@@ -180,7 +179,6 @@ async def test_taker_stream_continues_after_auth_signing_error(signing_error, ca
         message_type="challenge",
         challenge=TakerChallenge(
             nonce="invalid",
-            evm_chain_id=1439,
             expires_at=1772851186901,
         ),
     )
@@ -221,6 +219,7 @@ async def test_taker_stream_continues_after_auth_signing_error(signing_error, ca
         "authenticated": False,
         "code": "invalid_signature",
         "message": "authentication failed",
+        "nonce": "",
     }
 
 
@@ -596,13 +595,12 @@ def test_taker_stream_request_encodes_conditional_order_evm_chain_id():
 def test_manual_taker_stream_request_encodes_auth_field_seven():
     request = TakerStreamRequest(
         message_type="auth",
-        auth=ManualTakerAuth(evm_chain_id=1439, signature="0xsig"),
+        auth=ManualTakerAuth(signature="0xsig"),
     )
 
     decoded = TakerStreamStreamingRequest.FromString(request.encode())
 
     assert decoded.message_type == "auth"
-    assert decoded.auth.evm_chain_id == 1439
     assert decoded.auth.signature == "0xsig"
 
 
@@ -615,13 +613,13 @@ def test_manual_taker_stream_response_decodes_fields_six_through_eight():
         ),
         challenge=TakerChallenge(
             nonce="0xnonce",
-            evm_chain_id=1439,
             expires_at=1772851186901,
         ),
         auth_result=TakerAuthResult(
             authenticated=True,
             code="success",
             message_="taker stream authenticated",
+            nonce="0xnonce",
         ),
     )
 
@@ -632,12 +630,12 @@ def test_manual_taker_stream_response_decodes_fields_six_through_eight():
     assert decoded.conditional_order.market_id == "0xmarket"
     assert decoded.challenge is not None
     assert decoded.challenge.nonce == "0xnonce"
-    assert decoded.challenge.evm_chain_id == 1439
     assert decoded.challenge.expires_at == 1772851186901
     assert decoded.auth_result is not None
     assert decoded.auth_result.authenticated is True
     assert decoded.auth_result.code == "success"
     assert decoded.auth_result.message_ == "taker stream authenticated"
+    assert decoded.auth_result.nonce == "0xnonce"
 
 
 @pytest.mark.asyncio

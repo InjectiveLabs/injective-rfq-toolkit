@@ -39,6 +39,9 @@ EIP712_DOMAIN_VERSION = "1"
 EIP712_DOMAIN_TYPE = (
     b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
 )
+TAKER_STREAM_AUTH_DOMAIN_TYPE = (
+    b"EIP712Domain(string name,string version,address verifyingContract)"
+)
 
 # --- Type hashes (must match indexer) ----------------------------------
 
@@ -67,10 +70,8 @@ STREAM_AUTH_CHALLENGE_TYPE = (
     b"StreamAuthChallenge(uint64 evmChainId,address maker,bytes32 nonce,uint64 expiresAt)"
 )
 
-# The toolkit intentionally exposes only the unbound TakerStream authentication
-# flow. Keep the server's complete typed-data schema opaque here and pin its hash.
-TAKER_STREAM_AUTH_CHALLENGE_TYPE_HASH = bytes.fromhex(
-    "d9ab487f4905880d82f555dd72613fab2737f909822b69f851f02db265ed9d53"
+TAKER_STREAM_AUTH_CHALLENGE_TYPE = (
+    b"TakerStreamAuthChallenge(address taker,bytes32 nonce,uint64 expiresAt)"
 )
 
 # --- Constants ---------------------------------------------------------
@@ -197,6 +198,18 @@ def domain_separator(evm_chain_id: int, verifying_contract_bech32: str) -> bytes
                                   # IDs fit in uint64 (Injective is 1439/1776/etc).
                                   # Indexer code uses big.Int.FillBytes(32) which
                                   # is byte-identical to right-aligned u64 here.
+        _enc_addr(addr20),
+    ))
+    return keccak(buf)
+
+
+def taker_auth_domain_separator(verifying_contract_bech32: str) -> bytes:
+    """Build the chain-independent EIP-712 domain for TakerStream auth."""
+    addr20 = bech32_to_evm(verifying_contract_bech32)
+    buf = b"".join((
+        keccak(TAKER_STREAM_AUTH_DOMAIN_TYPE),
+        _enc_string(EIP712_DOMAIN_NAME),
+        _enc_string(EIP712_DOMAIN_VERSION),
         _enc_addr(addr20),
     ))
     return keccak(buf)
@@ -342,7 +355,6 @@ def stream_auth_challenge_digest(
 
 def taker_stream_auth_challenge_digest(
     *,
-    evm_chain_id: int,
     verifying_contract_bech32: str,
     taker_bech32: str,
     nonce_hex: str,
@@ -354,14 +366,12 @@ def taker_stream_auth_challenge_digest(
         raise ValueError(f"expected 32-byte nonce, got {len(nonce)}")
 
     msg = b"".join((
-        TAKER_STREAM_AUTH_CHALLENGE_TYPE_HASH,
-        _enc_u64(evm_chain_id),
+        keccak(TAKER_STREAM_AUTH_CHALLENGE_TYPE),
         _enc_addr(bech32_to_evm(taker_bech32)),
-        _enc_zero_addr(),
         nonce,
         _enc_u64(expires_at),
     ))
-    domain_sep = domain_separator(evm_chain_id, verifying_contract_bech32)
+    domain_sep = taker_auth_domain_separator(verifying_contract_bech32)
     return _final_digest(domain_sep, keccak(msg))
 
 
@@ -516,7 +526,6 @@ def sign_maker_challenge_v2(
 def sign_taker_challenge_v1(
     *,
     private_key: str,
-    evm_chain_id: int,
     verifying_contract_bech32: str,
     taker: str,
     nonce_hex: str,
@@ -524,7 +533,6 @@ def sign_taker_challenge_v1(
 ) -> str:
     """Sign a TakerStream auth v1 challenge and return `0x` + r||s||v hex."""
     digest = taker_stream_auth_challenge_digest(
-        evm_chain_id=evm_chain_id,
         verifying_contract_bech32=verifying_contract_bech32,
         taker_bech32=taker,
         nonce_hex=nonce_hex,

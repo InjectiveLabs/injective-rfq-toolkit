@@ -522,11 +522,11 @@ message CreateRFQRequestType {
   bool price_check = 8;
 }
 
-// Taker response signed directly by request_address using EIP-712 v1
+// Taker response signed by request_address or an authorized Authz grantee
+// using EIP-712 v1
 message TakerAuth {
-  // EVM chain ID used in the EIP-712 domain
-  uint64 evm_chain_id = 1;
-  // EIP-712 signature over the server-provided challenge
+  // EIP-712 signature over TakerStreamAuthChallenge(address taker,bytes32
+  // nonce,uint64 expiresAt)
   string signature = 2;
 }
 
@@ -582,11 +582,8 @@ message ConditionalOrderAck {
 message TakerChallenge {
   // Hex-encoded 32-byte nonce
   string nonce = 1;
-  // EVM chain ID to use when signing the TakerStreamAuthChallenge typed data
-  uint64 evm_chain_id = 2;
   // Unix milliseconds after which the challenge is no longer accepted
   sint64 expires_at = 3;
-  reserved 4;
 }
 // Informational authentication result. Authentication failure does not close
 // the stream or block RFQ requests.
@@ -594,10 +591,12 @@ message TakerAuthResult {
   // Whether the challenge signature was successfully verified
   bool authenticated = 1;
   // Stable result code such as success, timeout, invalid_signature, or
-  // unsupported_chain_id
+  // missing_authz_grant
   string code = 2;
   // Human-readable result description
   string message_ = 3;
+  // Hex-encoded nonce of the authentication challenge, when one was issued
+  string nonce = 4;
 }
 // Message sent by maker in bidirectional stream
 message MakerStreamStreamingRequest {

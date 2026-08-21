@@ -1037,12 +1037,10 @@ class ConditionalOrderAck:
 class TakerAuth:
     """Taker response to a stream authentication challenge."""
 
-    evm_chain_id: int = 0
     signature: str = ""
 
     def encode(self) -> bytes:
         result = b""
-        result += _encode_uint64(1, self.evm_chain_id)
         result += _encode_string(2, self.signature)
         return result
 
@@ -1052,7 +1050,6 @@ class TakerChallenge:
     """Short-lived authentication challenge sent by the TakerStream."""
 
     nonce: str = ""
-    evm_chain_id: int = 0
     expires_at: int = 0
 
     @classmethod
@@ -1066,9 +1063,7 @@ class TakerChallenge:
 
             if wire_type == 0:
                 value, pos = _DecodeVarint(data, pos)
-                if field_num == 2:
-                    result.evm_chain_id = value
-                elif field_num == 3:
+                if field_num == 3:
                     result.expires_at = _decode_zigzag(value)
             elif wire_type == 2:
                 length, pos = _DecodeVarint32(data, pos)
@@ -1087,6 +1082,7 @@ class TakerAuthResult:
     authenticated: bool = False
     code: str = ""
     message_: str = ""
+    nonce: str = ""
 
     @classmethod
     def decode(cls, data: bytes) -> "TakerAuthResult":
@@ -1109,6 +1105,8 @@ class TakerAuthResult:
                     result.code = value
                 elif field_num == 3:
                     result.message_ = value
+                elif field_num == 4:
+                    result.nonce = value
 
         return result
 
