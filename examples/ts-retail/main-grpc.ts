@@ -9,11 +9,12 @@
  *
  * Flow:
  * 0. Retail user has already granted permissions to RFQ contract (see setup.ts)
- * 1. Retail opens TakerStream (bidirectional gRPC) with request_address metadata
- * 2. Retail sends an RFQ request over the stream (message_type "request")
- * 3. Indexer answers with a request_ack carrying the rfq_id
- * 4. Makers' quotes arrive on the same stream (message_type "quote")
- * 5. Retail picks best quote within slippage tolerance and accepts on-chain
+ * 1. Retail opens TakerStream with request_address + auth_version metadata
+ * 2. Retail signs the chain-independent auth challenge and checks auth_result
+ * 3. Retail sends an RFQ request over the stream (message_type "request")
+ * 4. Indexer answers with a request_ack carrying the rfq_id
+ * 5. Makers' quotes arrive on the same stream (message_type "quote")
+ * 6. Retail picks best quote within slippage tolerance and accepts on-chain
  *
  * Note: the proto also declares a unary Request RPC, but the indexer does
  * not implement it (returns [unimplemented]). TakerStream is the supported
@@ -29,9 +30,11 @@ import { v4 as uuidv4 } from "uuid";
 import {
   MsgBroadcasterWithPk,
   MsgExecuteContractCompat,
+  PrivateKey,
 } from "@injectivelabs/sdk-ts";
 import { Network, getNetworkEndpoints } from "@injectivelabs/networks";
 import { ChainId } from "@injectivelabs/ts-types";
+import { signTakerChallengeV1 } from "../ts-mm/eip712.js";
 
 dotenv.config();
 
@@ -79,9 +82,6 @@ const CHAIN_ID = process.env.CHAIN_ID!;
 const INJUSDT_MARKET_ID =
   "0x7cc8b10d7deb61e744ef83bdec2bbcf4a056867e89b062c6a453020ca82bd4e4";
 
-// Taker address (derive from private key in production)
-const TAKER_ADDRESS = "inj1cml96vmptgw99syqrrz8az79xer2pcgp0a885r";
-
 // Network
 const NETWORK = Network.Local;
 const ENDPOINTS = getNetworkEndpoints(NETWORK);
@@ -93,6 +93,10 @@ const ENDPOINTS = getNetworkEndpoints(NETWORK);
 if (!GRPC_ENDPOINT) throw new Error("GRPC_ENDPOINT is not set");
 if (!CONTRACT_ADDRESS) throw new Error("CONTRACT_ADDRESS is not set");
 if (!RETAIL_PRIVATE_KEY) throw new Error("RETAIL_PRIVATE_KEY is not set");
+
+const TAKER_ADDRESS = PrivateKey.fromHex(
+  RETAIL_PRIVATE_KEY.replace(/^0x/, "")
+).toBech32();
 
 /* -------------------------------------------------------------------------- */
 /*                              INPUT PARAMETERS                              */
@@ -252,16 +256,64 @@ async function main() {
   // The indexer identifies the taker via the request_address metadata header.
   const metadata = new grpc.Metadata();
   metadata.add("request_address", TAKER_ADDRESS);
+  metadata.add("auth_version", "v1");
 
   const takerStream = client.TakerStream(metadata);
   const receivedQuotes: CollectedQuote[] = [];
   let ackResolve: ((id: number) => void) | null = null;
   let ackReject: ((err: Error) => void) | null = null;
+  let authResolve: (() => void) | null = null;
+  let authReject: ((err: Error) => void) | null = null;
+
+  const authPromise = new Promise<void>((resolve, reject) => {
+    authResolve = resolve;
+    authReject = reject;
+    setTimeout(() => reject(new Error("Timed out waiting for auth_result")), 5000);
+  });
 
   takerStream.on("data", (response: any) => {
     switch (response.message_type) {
       case "pong":
         return;
+      case "challenge": {
+        const challenge = response.challenge;
+        try {
+          const signature = signTakerChallengeV1({
+            privateKey: RETAIL_PRIVATE_KEY,
+            contractAddress: CONTRACT_ADDRESS,
+            taker: TAKER_ADDRESS,
+            nonceHex: challenge.nonce,
+            expiresAt: BigInt(challenge.expires_at),
+          });
+          takerStream.write({
+            message_type: "auth",
+            auth: { signature },
+          });
+          console.log(`🔐 Taker auth challenge signed (nonce=${challenge.nonce})`);
+        } catch (err) {
+          const authError = err instanceof Error ? err : new Error(String(err));
+          authReject?.(authError);
+          authResolve = null;
+          authReject = null;
+          takerStream.end();
+        }
+        return;
+      }
+      case "auth_result": {
+        const result = response.auth_result;
+        console.log(
+          `🔎 Taker auth result | authenticated=${result.authenticated} ` +
+          `code=${result.code} nonce=${result.nonce || "n/a"}`
+        );
+        if (result.authenticated) {
+          authResolve?.();
+        } else {
+          authReject?.(new Error(`${result.code}: ${result.message_}`));
+        }
+        authResolve = null;
+        authReject = null;
+        return;
+      }
       case "request_ack": {
         const ack = response.request_ack;
         const id = Number(ack.rfq_id);
@@ -312,6 +364,9 @@ async function main() {
 
   takerStream.on("error", (err: any) => {
     console.error("❌ TakerStream error:", err.message);
+    authReject?.(err);
+    authResolve = null;
+    authReject = null;
     ackReject?.(err);
     ackResolve = null;
     ackReject = null;
@@ -319,7 +374,10 @@ async function main() {
 
   console.log("📡 TakerStream open");
 
-  // ── Step 2: Send RFQ request over the stream ───────────────────────────
+  await authPromise;
+  console.log("✅ TakerStream authenticated");
+
+  // ── Step 3: Send RFQ request over the stream ───────────────────────────
   const clientId = uuidv4();
   const expiryMs = Date.now() + 5 * 60 * 1000; // 5 minutes
 
@@ -345,7 +403,7 @@ async function main() {
 
   const rfqId = await ackPromise;
 
-  // ── Step 3-4: Wait for quotes, then pick the best ─────────────────────
+  // ── Step 4-5: Wait for quotes, then pick the best ─────────────────────
   const QUOTE_WAIT_MS = 2000;
   console.log(`\n⏳ Waiting ${QUOTE_WAIT_MS}ms for quotes...`);
 
@@ -368,7 +426,7 @@ async function main() {
     console.log(`   price=${q.price} maker=${q.maker}`);
   }
 
-  // ── Step 5: Accept quote on-chain ──────────────────────────────────────
+  // ── Step 6: Accept quote on-chain ──────────────────────────────────────
   await acceptQuote(maxAcceptablePrice, rfqId, INJUSDT_MARKET_ID, best);
 
   takerStream.end();

@@ -20,12 +20,17 @@ from rfq_test.clients.websocket import (
 )
 from rfq_test.factories.request import RequestFactory
 from rfq_test.proto.injective_rfq_rpc_pb2 import (
+    ConditionalOrderResponseType as PbConditionalOrderResponseType,
     MakerChallenge,
     MakerStreamResponse,
     MakerStreamStreamingRequest,
     RFQExpiryType as PbRFQExpiryType,
     RFQSettlementMakerUpdate as PbRFQSettlementMakerUpdate,
     RFQSettlementQuote as PbRFQSettlementQuote,
+    TakerAuthResult,
+    TakerChallenge,
+    TakerStreamResponse,
+    TakerStreamStreamingRequest,
 )
 from rfq_test.proto.rfq_messages import (
     CreateRFQRequestType,
@@ -37,6 +42,8 @@ from rfq_test.proto.rfq_messages import (
     RFQSettlementLimitActionType,
     RFQSettlementMakerUpdate,
     RFQSettlementType,
+    TakerAuth as ManualTakerAuth,
+    TakerStreamResponse as ManualTakerStreamResponse,
     TakerStreamRequest,
     _encode_message,
     _encode_string,
@@ -89,6 +96,136 @@ async def test_taker_stream_sends_request_address_header():
 
 
 @pytest.mark.asyncio
+async def test_taker_stream_sends_auth_metadata_headers():
+    fake_ws = FakeWebSocket()
+    connect_mock = AsyncMock(return_value=fake_ws)
+
+    with patch("rfq_test.clients.websocket.websockets.connect", connect_mock), patch(
+        "rfq_test.clients.websocket.asyncio.create_task",
+        side_effect=lambda coro: DummyTask(coro),
+    ):
+        client = TakerStreamClient(
+            "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+            request_address="inj1taker",
+            auth_private_key="0x" + "11" * 32,
+            auth_contract_address="inj1contract",
+        )
+        await client.connect()
+
+    assert connect_mock.await_args.kwargs["additional_headers"] == {
+        "request_address": "inj1taker",
+        "auth_version": "v1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_taker_stream_answers_auth_challenge_and_queues_result():
+    challenge = TakerChallenge(
+        nonce="0x" + "22" * 32,
+        expires_at=1772851186901,
+    )
+    challenge_response = TakerStreamResponse(message_type="challenge", challenge=challenge)
+    result_response = TakerStreamResponse(
+        message_type="auth_result",
+        auth_result=TakerAuthResult(
+            authenticated=True,
+            code="success",
+            message_="taker stream authenticated",
+            nonce="0x" + "22" * 32,
+        ),
+    )
+    fake_ws = SimpleNamespace(
+        recv=AsyncMock(
+            side_effect=[
+                encode_grpc_message(challenge_response),
+                encode_grpc_message(result_response),
+                asyncio.CancelledError(),
+            ]
+        ),
+        send=AsyncMock(),
+    )
+    client = TakerStreamClient(
+        "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+        request_address="inj1taker",
+        auth_private_key="0x" + "11" * 32,
+        auth_contract_address="inj1contract",
+    )
+    client._connected = True
+    client._ws = fake_ws
+
+    with patch("rfq_test.clients.websocket.sign_taker_challenge_v1", return_value="0xsig") as sign:
+        await client._receive_loop()
+
+    sign.assert_called_once_with(
+        private_key="0x" + "11" * 32,
+        verifying_contract_bech32="inj1contract",
+        taker="inj1taker",
+        nonce_hex="0x" + "22" * 32,
+        expires_at=1772851186901,
+    )
+    sent = decode_grpc_message(fake_ws.send.await_args.args[0], TakerStreamStreamingRequest)
+    assert sent.message_type == "auth"
+    assert sent.auth.signature == "0xsig"
+    assert await client.wait_for_auth_result() == {
+        "authenticated": True,
+        "code": "success",
+        "message": "taker stream authenticated",
+        "nonce": "0x" + "22" * 32,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("signing_error", [ValueError("invalid nonce"), OverflowError("expiry")])
+async def test_taker_stream_continues_after_auth_signing_error(signing_error, caplog):
+    challenge_response = TakerStreamResponse(
+        message_type="challenge",
+        challenge=TakerChallenge(
+            nonce="invalid",
+            expires_at=1772851186901,
+        ),
+    )
+    result_response = TakerStreamResponse(
+        message_type="auth_result",
+        auth_result=TakerAuthResult(
+            authenticated=False,
+            code="invalid_signature",
+            message_="authentication failed",
+        ),
+    )
+    fake_ws = SimpleNamespace(
+        recv=AsyncMock(
+            side_effect=[
+                encode_grpc_message(challenge_response),
+                encode_grpc_message(result_response),
+                asyncio.CancelledError(),
+            ]
+        ),
+        send=AsyncMock(),
+    )
+    client = TakerStreamClient(
+        "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+        request_address="inj1taker",
+        auth_private_key="0x" + "11" * 32,
+        auth_contract_address="inj1contract",
+    )
+    client._connected = True
+    client._ws = fake_ws
+
+    with patch("rfq_test.clients.websocket.sign_taker_challenge_v1", side_effect=signing_error):
+        await client._receive_loop()
+
+    fake_ws.send.assert_not_awaited()
+    assert fake_ws.recv.await_count == 3
+    assert "Failed to answer TakerStream auth challenge" in caplog.text
+    assert await client.wait_for_auth_result() == {
+        "authenticated": False,
+        "code": "invalid_signature",
+        "message": "authentication failed",
+        "nonce": "",
+    }
+
+
+@pytest.mark.asyncio
 async def test_maker_stream_sends_supported_metadata_headers():
     fake_ws = FakeWebSocket()
     connect_mock = AsyncMock(return_value=fake_ws)
@@ -110,6 +247,29 @@ async def test_maker_stream_sends_supported_metadata_headers():
         "subscribe_to_quotes_updates": "true",
         "subscribe_to_settlement_updates": "true",
     }
+
+
+@pytest.mark.asyncio
+async def test_maker_stream_sends_each_market_id_as_repeated_metadata():
+    fake_ws = FakeWebSocket()
+    connect_mock = AsyncMock(return_value=fake_ws)
+
+    with patch("rfq_test.clients.websocket.websockets.connect", connect_mock), patch(
+        "rfq_test.clients.websocket.asyncio.create_task",
+        side_effect=lambda coro: DummyTask(coro),
+    ):
+        client = MakerStreamClient(
+            "wss://example.test/injective_rfq_rpc.InjectiveRfqRPC",
+            maker_address="inj1maker",
+            market_ids=["0xmarket1", "0xmarket2"],
+        )
+        await client.connect()
+
+    assert connect_mock.await_args.kwargs["additional_headers"] == [
+        ("maker_address", "inj1maker"),
+        ("market_ids", "0xmarket1"),
+        ("market_ids", "0xmarket2"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -432,6 +592,52 @@ def test_taker_stream_request_encodes_conditional_order_evm_chain_id():
             raise AssertionError(f"Unexpected wire type {wire_type} for field {field_num}")
 
     assert evm_chain_id == 1439
+
+
+def test_manual_taker_stream_request_encodes_auth_field_seven():
+    request = TakerStreamRequest(
+        message_type="auth",
+        auth=ManualTakerAuth(signature="0xsig"),
+    )
+
+    decoded = TakerStreamStreamingRequest.FromString(request.encode())
+
+    assert decoded.message_type == "auth"
+    assert decoded.auth.signature == "0xsig"
+
+
+def test_manual_taker_stream_response_decodes_fields_six_through_eight():
+    response = TakerStreamResponse(
+        message_type="auth_result",
+        conditional_order=PbConditionalOrderResponseType(
+            rfq_id=7,
+            market_id="0xmarket",
+        ),
+        challenge=TakerChallenge(
+            nonce="0xnonce",
+            expires_at=1772851186901,
+        ),
+        auth_result=TakerAuthResult(
+            authenticated=True,
+            code="success",
+            message_="taker stream authenticated",
+            nonce="0xnonce",
+        ),
+    )
+
+    decoded = ManualTakerStreamResponse.decode(response.SerializeToString())
+
+    assert decoded.conditional_order is not None
+    assert decoded.conditional_order.rfq_id == 7
+    assert decoded.conditional_order.market_id == "0xmarket"
+    assert decoded.challenge is not None
+    assert decoded.challenge.nonce == "0xnonce"
+    assert decoded.challenge.expires_at == 1772851186901
+    assert decoded.auth_result is not None
+    assert decoded.auth_result.authenticated is True
+    assert decoded.auth_result.code == "success"
+    assert decoded.auth_result.message_ == "taker stream authenticated"
+    assert decoded.auth_result.nonce == "0xnonce"
 
 
 @pytest.mark.asyncio

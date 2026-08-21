@@ -42,8 +42,19 @@ export interface SignMakerChallengeV2Input {
   expiresAt: number | bigint;
 }
 
+export interface SignTakerChallengeV1Input {
+  privateKey: string;          // taker key or an authorized Authz grantee key
+  contractAddress: string;     // RFQ contract bech32
+  taker: string;               // TakerStream request_address
+  nonceHex: string;            // 32-byte hex, with or without 0x
+  expiresAt: number | bigint;
+}
+
 const DOMAIN_TYPE =
   "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
+
+const TAKER_STREAM_AUTH_DOMAIN_TYPE =
+  "EIP712Domain(string name,string version,address verifyingContract)";
 
 const SIGN_QUOTE_TYPE =
   "SignQuote(uint64 evmChainId,string marketId,uint64 rfqId,address taker,uint8 takerDirection," +
@@ -53,6 +64,9 @@ const SIGN_QUOTE_TYPE =
 
 const STREAM_AUTH_CHALLENGE_TYPE =
   "StreamAuthChallenge(uint64 evmChainId,address maker,bytes32 nonce,uint64 expiresAt)";
+
+const TAKER_STREAM_AUTH_CHALLENGE_TYPE =
+  "TakerStreamAuthChallenge(address taker,bytes32 nonce,uint64 expiresAt)";
 
 // --- bech32 → 20-byte EVM address (HRP = "inj") ------------------------------
 //
@@ -155,6 +169,19 @@ function domainSeparator(evmChainId: number, contractBech32: string): Uint8Array
   );
 }
 
+function takerAuthDomainSeparator(contractBech32: string): Uint8Array {
+  return getBytes(
+    keccak256(
+      concat(
+        stringWord(TAKER_STREAM_AUTH_DOMAIN_TYPE),
+        stringWord("RFQ"),
+        stringWord("1"),
+        addressWord(bech32ToEvm(contractBech32)),
+      ),
+    ),
+  );
+}
+
 /**
  * Sign an RFQ quote with EIP-712 v2.
  * Returns a 0x-prefixed 65-byte hex string (r ‖ s ‖ v).
@@ -230,6 +257,34 @@ export function signMakerChallengeV2(input: SignMakerChallengeV2Input): string {
 
   const pkHex = "0x" + input.privateKey.replace(/^0x/, "");
   const key = new SigningKey(pkHex);
+  const sig = key.sign(digest);
+  const yParity = sig.yParity ?? (sig.v >= 27 ? sig.v - 27 : sig.v);
+  return hexlify(
+    concat(getBytes(sig.r), getBytes(sig.s), new Uint8Array([yParity & 1])),
+  );
+}
+
+/** Sign the chain-independent TakerStream v1 authentication challenge. */
+export function signTakerChallengeV1(input: SignTakerChallengeV1Input): string {
+  const nonceHex = input.nonceHex.replace(/^0x/, "");
+  if (nonceHex.length !== 64) {
+    throw new Error(`expected 32-byte nonce hex, got ${nonceHex.length / 2} bytes`);
+  }
+
+  const msgHash = getBytes(
+    keccak256(
+      concat(
+        stringWord(TAKER_STREAM_AUTH_CHALLENGE_TYPE),
+        addressWord(bech32ToEvm(input.taker)),
+        getBytes("0x" + nonceHex),
+        uintWord(BigInt(input.expiresAt), 8),
+      ),
+    ),
+  );
+
+  const ds = takerAuthDomainSeparator(input.contractAddress);
+  const digest = keccak256(concat(getBytes("0x1901"), ds, msgHash));
+  const key = new SigningKey("0x" + input.privateKey.replace(/^0x/, ""));
   const sig = key.sign(digest);
   const yParity = sig.yParity ?? (sig.v >= 27 ? sig.v - 27 : sig.v);
   return hexlify(

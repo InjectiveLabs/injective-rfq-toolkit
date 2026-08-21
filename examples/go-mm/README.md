@@ -1,5 +1,18 @@
 # Market maker RFQ Integration
 
+## TakerStream authentication probe
+
+The standalone `taker-auth` example demonstrates the native gRPC v1 taker
+authentication handshake without creating an RFQ or submitting a transaction.
+It reads `GRPC_ENDPOINT`, `CONTRACT_ADDRESS`, and either
+`RETAIL_PRIVATE_KEY` or `TESTNET_RETAIL_PRIVATE_KEY`. If no key is configured,
+it generates an ephemeral signer. Set `TAKER_REQUEST_ADDRESS` only when the
+signing key is an authorized Authz grantee for a different taker address.
+
+```bash
+go run ./taker-auth
+```
+
 This guide explains how a market maker (MM) integrates with the RFQ system: permission setup, listening for RFQs, and responding with signed quotes.
 
 ## 1. Permission Setup (One-Time)
