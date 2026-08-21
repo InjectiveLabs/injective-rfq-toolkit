@@ -39,6 +39,9 @@ EIP712_DOMAIN_VERSION = "1"
 EIP712_DOMAIN_TYPE = (
     b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
 )
+TAKER_STREAM_AUTH_DOMAIN_TYPE = (
+    b"EIP712Domain(string name,string version,address verifyingContract)"
+)
 
 # --- Type hashes (must match indexer) ----------------------------------
 
@@ -65,6 +68,10 @@ SIGNED_TAKER_INTENT_TYPE = (
 
 STREAM_AUTH_CHALLENGE_TYPE = (
     b"StreamAuthChallenge(uint64 evmChainId,address maker,bytes32 nonce,uint64 expiresAt)"
+)
+
+TAKER_STREAM_AUTH_CHALLENGE_TYPE = (
+    b"TakerStreamAuthChallenge(address taker,bytes32 nonce,uint64 expiresAt)"
 )
 
 # --- Constants ---------------------------------------------------------
@@ -191,6 +198,18 @@ def domain_separator(evm_chain_id: int, verifying_contract_bech32: str) -> bytes
                                   # IDs fit in uint64 (Injective is 1439/1776/etc).
                                   # Indexer code uses big.Int.FillBytes(32) which
                                   # is byte-identical to right-aligned u64 here.
+        _enc_addr(addr20),
+    ))
+    return keccak(buf)
+
+
+def taker_auth_domain_separator(verifying_contract_bech32: str) -> bytes:
+    """Build the chain-independent EIP-712 domain for TakerStream auth."""
+    addr20 = bech32_to_evm(verifying_contract_bech32)
+    buf = b"".join((
+        keccak(TAKER_STREAM_AUTH_DOMAIN_TYPE),
+        _enc_string(EIP712_DOMAIN_NAME),
+        _enc_string(EIP712_DOMAIN_VERSION),
         _enc_addr(addr20),
     ))
     return keccak(buf)
@@ -331,6 +350,28 @@ def stream_auth_challenge_digest(
         _enc_u64(expires_at),
     ))
     domain_sep = domain_separator(evm_chain_id, verifying_contract_bech32)
+    return _final_digest(domain_sep, keccak(msg))
+
+
+def taker_stream_auth_challenge_digest(
+    *,
+    verifying_contract_bech32: str,
+    taker_bech32: str,
+    nonce_hex: str,
+    expires_at: int,
+) -> bytes:
+    """Compute the 32-byte EIP-712 digest for TakerStream auth v1."""
+    nonce = bytes.fromhex(nonce_hex.removeprefix("0x"))
+    if len(nonce) != 32:
+        raise ValueError(f"expected 32-byte nonce, got {len(nonce)}")
+
+    msg = b"".join((
+        keccak(TAKER_STREAM_AUTH_CHALLENGE_TYPE),
+        _enc_addr(bech32_to_evm(taker_bech32)),
+        nonce,
+        _enc_u64(expires_at),
+    ))
+    domain_sep = taker_auth_domain_separator(verifying_contract_bech32)
     return _final_digest(domain_sep, keccak(msg))
 
 
@@ -476,6 +517,24 @@ def sign_maker_challenge_v2(
         evm_chain_id=evm_chain_id,
         verifying_contract_bech32=verifying_contract_bech32,
         maker_bech32=maker,
+        nonce_hex=nonce_hex,
+        expires_at=expires_at,
+    )
+    return _sign_digest(digest, private_key)
+
+
+def sign_taker_challenge_v1(
+    *,
+    private_key: str,
+    verifying_contract_bech32: str,
+    taker: str,
+    nonce_hex: str,
+    expires_at: int,
+) -> str:
+    """Sign a TakerStream auth v1 challenge and return `0x` + r||s||v hex."""
+    digest = taker_stream_auth_challenge_digest(
+        verifying_contract_bech32=verifying_contract_bech32,
+        taker_bech32=taker,
         nonce_hex=nonce_hex,
         expires_at=expires_at,
     )

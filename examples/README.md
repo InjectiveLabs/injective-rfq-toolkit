@@ -7,14 +7,14 @@ Code examples for integrating with the Injective RFQ system. Each example demons
 Each language has both **WebSocket** and **gRPC** variants of the MM/Retail flow. For the
 current public testnet deployment, the docs-verified end-to-end paths are gRPC-web over
 WebSocket via `test_settlement.py` and native gRPC via `test_settlement_grpc.py`,
-including MakerStream auth.
+including stream authentication.
 
 | Directory | Language | Role | Transport | Description |
 |-----------|----------|------|-----------|-------------|
 | `ts-mm/main.ts` | TypeScript | Market Maker | WebSocket | MM quote streaming via WebSocket |
 | `ts-mm/main-grpc.ts` | TypeScript | Market Maker | gRPC | MM quote streaming via gRPC MakerStream |
 | `ts-retail/main.ts` | TypeScript | Retail (Taker) | WebSocket | RFQ request, quote aggregation, on-chain acceptance |
-| `ts-retail/main-grpc.ts` | TypeScript | Retail (Taker) | gRPC | Same flow using gRPC Request + StreamQuote |
+| `ts-retail/main-grpc.ts` | TypeScript | Retail (Taker) | gRPC | Authenticated TakerStream, RFQ request, quote aggregation, on-chain acceptance |
 | `go-mm/main/main.go` | Go | Market Maker | WebSocket | MM quote streaming via WebSocket |
 | `go-mm/main-grpc/main.go` | Go | Market Maker | gRPC | MM quote streaming via gRPC MakerStream |
 | `python-mm/main.py` | Python | Market Maker | WebSocket/gRPC-web | MM quote streaming via authenticated MakerStream |
@@ -28,6 +28,7 @@ including MakerStream auth.
 | `test_roundtrip.py` | End-to-end RFQ roundtrip test (WebSocket) |
 | `test_settlement.py` | Full E2E settlement test (WebSocket, MakerStream auth, on-chain settlement) |
 | `test_settlement_grpc.py` | Full E2E settlement test (gRPC) |
+| `taker_multi_quote.py` | Authenticated taker + three authenticated makers, multi-quote settlement |
 | `derive_key.py` | Key derivation utility |
 
 ## Getting Started

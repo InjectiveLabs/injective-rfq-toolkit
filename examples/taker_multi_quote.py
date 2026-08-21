@@ -68,7 +68,14 @@ async def mm_listen_and_quote(
         return None
 
     mm_wallet = Wallet.from_private_key(pk)
-    mm_ws = MakerStreamClient(config.indexer.ws_endpoint, timeout=30.0)
+    mm_ws = MakerStreamClient(
+        config.indexer.ws_endpoint,
+        maker_address=mm_wallet.inj_address,
+        timeout=30.0,
+        auth_private_key=mm_wallet.private_key,
+        auth_evm_chain_id=evm_chain_id,
+        auth_contract_address=contract_address,
+    )
     await mm_ws.connect()
     logger.info(f"Maker {mm_wallet.inj_address[:15]}... connected")
 
@@ -161,12 +168,23 @@ async def main():
 
     # Taker connects and submits request
     taker_ws = TakerStreamClient(
-        endpoint=config.indexer.ws_endpoint,
+        config.indexer.ws_endpoint,
         request_address=retail_wallet.inj_address,
         timeout=30.0,
+        auth_private_key=retail_wallet.private_key,
+        auth_contract_address=contract_address,
     )
     await taker_ws.connect()
-    print("✅ Taker connected to TakerStream")
+    auth_result = await taker_ws.wait_for_auth_result(timeout=10.0)
+    if not auth_result["authenticated"]:
+        raise RuntimeError(
+            f"Taker authentication failed: {auth_result['code']}: "
+            f"{auth_result['message']}"
+        )
+    print(
+        "✅ Taker authenticated "
+        f"(nonce={auth_result['nonce'] or 'not returned'})"
+    )
 
     client_id = str(uuid.uuid4())
     expiry_ms = int(time.time() * 1000) + 300_000

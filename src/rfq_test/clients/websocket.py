@@ -32,6 +32,7 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
     RFQProcessedQuoteType,
     RFQQuoteType,
     RFQSettlementMakerUpdate,
+    TakerAuth,
     TakerStreamStreamingRequest,
     TakerStreamResponse,
 )
@@ -41,7 +42,7 @@ from rfq_test.proto.rfq_messages import (
     ConditionalOrderInput,
     TakerStreamRequest as TakerStreamConditionalRequest,
 )
-from rfq_test.crypto.eip712 import sign_maker_challenge_v2
+from rfq_test.crypto.eip712 import sign_maker_challenge_v2, sign_taker_challenge_v1
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +301,9 @@ class TakerStreamClient(BaseStreamClient):
         base_url: str,
         request_address: Optional[str] = None,
         timeout: float = 10.0,
+        *,
+        auth_private_key: Optional[str] = None,
+        auth_contract_address: Optional[str] = None,
     ):
         """Initialize Taker stream client.
 
@@ -307,9 +311,19 @@ class TakerStreamClient(BaseStreamClient):
             base_url: WebSocket base URL (without /TakerStream)
             request_address: Taker's Injective address (required by indexer as stream metadata)
             timeout: Default timeout for operations
+            auth_private_key: Private key controlling request_address. When set,
+                the client requests and automatically answers taker auth v1. It
+                may also be an authorized Authz grantee key.
+            auth_contract_address: Verifying contract used by the RFQ EIP-712 domain.
         """
         super().__init__(base_url, timeout=timeout)
         self._request_address = request_address
+        self._auth_private_key = auth_private_key
+        self._auth_contract_address = auth_contract_address
+        if auth_private_key and (not request_address or not auth_contract_address):
+            raise ValueError(
+                "request_address and auth_contract_address are required with auth_private_key"
+            )
 
     @property
     def stream_path(self) -> str:
@@ -319,7 +333,10 @@ class TakerStreamClient(BaseStreamClient):
         """gRPC-web metadata required to identify the taker stream."""
         if not self._request_address:
             return None
-        return {"request_address": self._request_address}
+        headers = {"request_address": self._request_address}
+        if self._auth_private_key:
+            headers["auth_version"] = "v1"
+        return headers
 
     async def _send_ping(self) -> None:
         """Send ping to keep connection alive."""
@@ -361,6 +378,43 @@ class TakerStreamClient(BaseStreamClient):
                     logger.info(f"Conditional order ACK: RFQ#{rfq_id}")
                     await self._message_queue.put(("conditional_order_ack", ack))
 
+                elif msg_type == "challenge":
+                    challenge = response.challenge
+                    if (
+                        not self._auth_private_key
+                        or not self._request_address
+                        or not self._auth_contract_address
+                    ):
+                        logger.warning(
+                            "Received TakerStream auth challenge but auth signer is not configured"
+                        )
+                        await self._message_queue.put(("challenge", challenge))
+                        continue
+
+                    try:
+                        signature = sign_taker_challenge_v1(
+                            private_key=self._auth_private_key,
+                            verifying_contract_bech32=self._auth_contract_address,
+                            taker=self._request_address,
+                            nonce_hex=challenge.nonce,
+                            expires_at=int(challenge.expires_at),
+                        )
+                        auth_msg = TakerStreamStreamingRequest(
+                            message_type="auth",
+                            auth=TakerAuth(signature=signature),
+                        )
+                    except (ValueError, OverflowError) as exc:
+                        logger.error("Failed to answer TakerStream auth challenge: %s", exc)
+                        continue
+                    logger.info("Answering TakerStream auth challenge")
+                    await self._send_raw(encode_grpc_message(auth_msg))
+
+                elif msg_type == "auth_result":
+                    result = response.auth_result
+                    log = logger.info if result.authenticated else logger.warning
+                    log("TakerStream auth result: %s (%s)", result.code, result.message_)
+                    await self._message_queue.put(("auth_result", result))
+
                 elif msg_type == "error":
                     err = response.error
                     logger.error("Stream error: %s", _format_stream_error(err))
@@ -378,6 +432,37 @@ class TakerStreamClient(BaseStreamClient):
                 if self._connected:
                     logger.error(f"Receive error: {e}")
                 break
+
+    async def wait_for_auth_result(self, timeout: float = 5.0) -> dict:
+        """Wait for the informational TakerStream authentication result."""
+        deferred = []
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    msg_type, data = await asyncio.wait_for(
+                        self._message_queue.get(),
+                        timeout=remaining,
+                    )
+                except asyncio.TimeoutError:
+                    break
+
+                if msg_type == "auth_result":
+                    return {
+                        "authenticated": bool(data.authenticated),
+                        "code": data.code,
+                        "message": data.message_,
+                        "nonce": data.nonce,
+                    }
+                deferred.append((msg_type, data))
+        finally:
+            for item in deferred:
+                await self._message_queue.put(item)
+
+        raise IndexerTimeoutError(f"No TakerStream auth_result within {timeout}s")
 
     async def send_conditional_order(
         self,

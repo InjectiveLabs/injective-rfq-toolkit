@@ -11,8 +11,10 @@ Field layouts match the injective_rfq_rpc service proto:
 - QuoteStreamAck: field 1 = rfq_id, field 2 = status, field 3 = taker
 - ConditionalOrderInput: fields 1-20; sent inside TakerStreamRequest for TP/SL orders
 - TakerStreamRequest: field 3 = conditional_order, field 4 = conditional_order_signature,
-  field 5 = conditional_order_sign_mode, field 6 = conditional_order_evm_chain_id
-- TakerStreamResponse: field 5 = conditional_order_ack
+  field 5 = conditional_order_sign_mode, field 6 = conditional_order_evm_chain_id,
+  field 7 = auth
+- TakerStreamResponse: field 5 = conditional_order_ack, field 6 = conditional_order,
+  field 7 = challenge, field 8 = auth_result
 - MakerStreamResponse: field 6 = RFQSettlementMakerUpdate, not RFQSettlementType
 """
 from __future__ import annotations
@@ -1032,12 +1034,90 @@ class ConditionalOrderAck:
 # ============================================================
 
 @dataclass
+class TakerAuth:
+    """Taker response to a stream authentication challenge."""
+
+    signature: str = ""
+
+    def encode(self) -> bytes:
+        result = b""
+        result += _encode_string(2, self.signature)
+        return result
+
+
+@dataclass
+class TakerChallenge:
+    """Short-lived authentication challenge sent by the TakerStream."""
+
+    nonce: str = ""
+    expires_at: int = 0
+
+    @classmethod
+    def decode(cls, data: bytes) -> "TakerChallenge":
+        result = cls()
+        pos = 0
+        while pos < len(data):
+            tag_wire, pos = _DecodeVarint32(data, pos)
+            field_num = tag_wire >> 3
+            wire_type = tag_wire & 0x7
+
+            if wire_type == 0:
+                value, pos = _DecodeVarint(data, pos)
+                if field_num == 3:
+                    result.expires_at = _decode_zigzag(value)
+            elif wire_type == 2:
+                length, pos = _DecodeVarint32(data, pos)
+                value = data[pos:pos + length]
+                pos += length
+                if field_num == 1:
+                    result.nonce = value.decode("utf-8")
+
+        return result
+
+
+@dataclass
+class TakerAuthResult:
+    """Informational result of TakerStream authentication."""
+
+    authenticated: bool = False
+    code: str = ""
+    message_: str = ""
+    nonce: str = ""
+
+    @classmethod
+    def decode(cls, data: bytes) -> "TakerAuthResult":
+        result = cls()
+        pos = 0
+        while pos < len(data):
+            tag_wire, pos = _DecodeVarint32(data, pos)
+            field_num = tag_wire >> 3
+            wire_type = tag_wire & 0x7
+
+            if wire_type == 0:
+                value, pos = _DecodeVarint(data, pos)
+                if field_num == 1:
+                    result.authenticated = bool(value)
+            elif wire_type == 2:
+                length, pos = _DecodeVarint32(data, pos)
+                value = data[pos:pos + length].decode("utf-8")
+                pos += length
+                if field_num == 2:
+                    result.code = value
+                elif field_num == 3:
+                    result.message_ = value
+                elif field_num == 4:
+                    result.nonce = value
+
+        return result
+
+
+@dataclass
 class TakerStreamRequest:
     """Message sent by taker in bidirectional stream.
 
     Fields: 1=message_type, 2=request, 3=conditional_order,
     4=conditional_order_signature, 5=conditional_order_sign_mode,
-    6=conditional_order_evm_chain_id.
+    6=conditional_order_evm_chain_id, 7=auth.
 
     Set message_type to "ping" for keep-alive, "request" when sending an
     RFQ request (populate field 2), or "conditional_order" when submitting
@@ -1053,6 +1133,7 @@ class TakerStreamRequest:
     conditional_order_signature: str = ""
     conditional_order_sign_mode: str = ""
     conditional_order_evm_chain_id: int = 0
+    auth: Optional[TakerAuth] = None
 
     def encode(self) -> bytes:
         result = b""
@@ -1064,6 +1145,8 @@ class TakerStreamRequest:
         result += _encode_string(4, self.conditional_order_signature)
         result += _encode_string(5, self.conditional_order_sign_mode)
         result += _encode_uint64(6, self.conditional_order_evm_chain_id)
+        if self.auth is not None:
+            result += _encode_message(7, self.auth.encode())
         return result
 
 
@@ -1072,7 +1155,8 @@ class TakerStreamResponse:
     """Message received by taker from server.
 
     Fields: 1=message_type, 2=quote, 3=request_ack, 4=error,
-    5=conditional_order_ack.
+    5=conditional_order_ack, 6=conditional_order, 7=challenge,
+    8=auth_result.
 
     message_type values: "pong", "quote", "request_ack", "error",
     "conditional_order_ack".
@@ -1082,6 +1166,9 @@ class TakerStreamResponse:
     request_ack: Optional[RequestStreamAck] = None
     error: Optional[StreamError] = None
     conditional_order_ack: Optional[ConditionalOrderAck] = None
+    conditional_order: Optional[ConditionalOrderResponseType] = None
+    challenge: Optional[TakerChallenge] = None
+    auth_result: Optional[TakerAuthResult] = None
 
     @classmethod
     def decode(cls, data: bytes) -> "TakerStreamResponse":
@@ -1110,6 +1197,12 @@ class TakerStreamResponse:
                     result.error = StreamError.decode(value_bytes)
                 elif field_num == 5:
                     result.conditional_order_ack = ConditionalOrderAck.decode(value_bytes)
+                elif field_num == 6:
+                    result.conditional_order = ConditionalOrderResponseType.decode(value_bytes)
+                elif field_num == 7:
+                    result.challenge = TakerChallenge.decode(value_bytes)
+                elif field_num == 8:
+                    result.auth_result = TakerAuthResult.decode(value_bytes)
 
         return result
 

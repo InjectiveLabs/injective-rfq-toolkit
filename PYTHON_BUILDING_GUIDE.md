@@ -12,12 +12,13 @@ This guide helps you avoid common pitfalls and build correctly from day one. You
 3. [Grant Creation (Critical)](#grant-creation-critical)
 4. [Quote Signing](#quote-signing)
 5. [MakerStream Auth Handshake](#makerstream-auth-handshake)
-6. [Indexer Integration (WebSocket)](#indexer-integration-websocket)
-7. [Contract Expectations](#contract-expectations)
-8. [Conditional Orders (TP/SL)](#conditional-orders-tpsl)
-9. [Error Handling](#error-handling)
-10. [Production Tips](#production-tips)
-11. [Quick Reference](#quick-reference)
+6. [TakerStream Auth Handshake](#takerstream-auth-handshake)
+7. [Indexer Integration (WebSocket)](#indexer-integration-websocket)
+8. [Contract Expectations](#contract-expectations)
+9. [Conditional Orders (TP/SL)](#conditional-orders-tpsl)
+10. [Error Handling](#error-handling)
+11. [Production Tips](#production-tips)
+12. [Quick Reference](#quick-reference)
 
 ---
 
@@ -527,6 +528,43 @@ challenge-response protocol without the reusable client wrapper.
 
 ---
 
+## TakerStream Auth Handshake
+
+Taker authentication is optional and informational: failed authentication does not close the stream or block RFQ requests. Request it by opening `TakerStream` with both `request_address` and `auth_version: v1` metadata.
+
+The server sends `TakerChallenge{nonce, expires_at}`. There is intentionally no EVM chain ID: taker auth uses the chain-independent domain
+`EIP712Domain(string name,string version,address verifyingContract)` and signs:
+
+```
+TakerStreamAuthChallenge(
+  address taker,
+  bytes32 nonce,
+  uint64 expiresAt
+)
+```
+
+Decode `nonce` to its raw 32 bytes, encode `taker` as the left-padded 20-byte EVM form of `request_address`, and reply with `TakerAuth{signature}`. The signing key can control `request_address` directly or belong to an authorized Authz grantee. The server then sends `TakerAuthResult{authenticated, code, message, nonce}`; use `nonce` to correlate the result with its challenge.
+
+The reusable client performs the complete exchange:
+
+```python
+client = TakerStreamClient(
+    ws_base_url,
+    request_address=taker_address,
+    auth_private_key=taker_or_autosigner_private_key,
+    auth_contract_address=contract_address,
+)
+await client.connect()
+result = await client.wait_for_auth_result(timeout=10)
+if not result["authenticated"]:
+    raise RuntimeError(f"{result['code']}: {result['message']}")
+print(f"authenticated challenge nonce={result['nonce']}")
+```
+
+For a native gRPC frontend implementation, including the byte-level TypeScript signer, see [`examples/ts-retail/main-grpc.ts`](examples/ts-retail/main-grpc.ts) and [`examples/ts-mm/eip712.ts`](examples/ts-mm/eip712.ts). For an auth-only live probe, run `RFQ_ENV=testnet PYTHONPATH=src python scripts/probe_taker_auth.py`.
+
+---
+
 ## Indexer Integration (WebSocket)
 
 ### Endpoints
@@ -546,7 +584,7 @@ Append `/TakerStream` or `/MakerStream` to the base URL.
 ### TakerStream (Retail)
 
 - **URL:** `{base_url}/TakerStream`
-- **Connection metadata:** Send `request_address` (taker's Injective address) as a header when connecting. The indexer uses this to associate requests with the correct taker.
+- **Connection metadata:** Send `request_address` (taker's Injective address) as a header when connecting. Add `auth_version: v1` to request the optional [TakerStream auth handshake](#takerstream-auth-handshake).
 - **Request:** Send `CreateRFQRequestType` with `client_id`, `market_id`, `direction`, `margin`, `quantity`, `worst_price`, `request_address`, and `expiry`. `client_id` is the taker-supplied correlation ID; the indexer returns the real `rfq_id` in the request ACK.
 - **Direction:** Use `"long"` or `"short"` (string). Do not use `0`/`1` or numeric values.
 

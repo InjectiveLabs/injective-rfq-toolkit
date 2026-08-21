@@ -486,7 +486,7 @@ message ListConditionalOrdersResponse {
 }
 // Message sent by taker in bidirectional stream
 message TakerStreamStreamingRequest {
-  // Type: 'request', 'ping', 'conditional_order'
+  // Type: 'request', 'ping', 'conditional_order', 'auth'
   string message_type = 1;
   // RFQ request to create
   CreateRFQRequestType request = 2;
@@ -499,6 +499,8 @@ message TakerStreamStreamingRequest {
   // EVM chain ID embedded in the EIP-712 domain for the conditional order.
   // Required when conditional_order_sign_mode is "v2".
   uint64 conditional_order_evm_chain_id = 6;
+  // Taker response to the stream authentication challenge
+  TakerAuth auth = 7;
 }
 // RFQ request
 message CreateRFQRequestType {
@@ -520,9 +522,17 @@ message CreateRFQRequestType {
   bool price_check = 8;
 }
 
+// Taker response signed by request_address or an authorized Authz grantee
+// using EIP-712 v1
+message TakerAuth {
+  // EIP-712 signature over TakerStreamAuthChallenge(address taker,bytes32
+  // nonce,uint64 expiresAt)
+  string signature = 2;
+}
+
 message TakerStreamResponse {
   // Type: 'quote', 'request_ack', 'error', 'pong', 'conditional_order_ack',
-  // 'conditional_order_update'
+  // 'conditional_order_update', 'challenge', 'auth_result'
   string message_type = 1;
   // Quote from market maker
   RFQQuoteType quote = 2;
@@ -534,6 +544,11 @@ message TakerStreamResponse {
   ConditionalOrderAck conditional_order_ack = 5;
   // Conditional order lifecycle update
   ConditionalOrderResponseType conditional_order = 6;
+  // Optional EIP-712 authentication challenge
+  TakerChallenge challenge = 7;
+  // Result of taker stream authentication; informational and does not change
+  // request handling
+  TakerAuthResult auth_result = 8;
 }
 // Acknowledgment for stream operations
 message RequestStreamAck {
@@ -561,6 +576,27 @@ message StreamError {
 message ConditionalOrderAck {
   // Created conditional order
   ConditionalOrderResponseType order = 1;
+}
+// Short-lived EIP-712 challenge proving control of the TakerStream
+// request_address
+message TakerChallenge {
+  // Hex-encoded 32-byte nonce
+  string nonce = 1;
+  // Unix milliseconds after which the challenge is no longer accepted
+  sint64 expires_at = 3;
+}
+// Informational authentication result. Authentication failure does not close
+// the stream or block RFQ requests.
+message TakerAuthResult {
+  // Whether the challenge signature was successfully verified
+  bool authenticated = 1;
+  // Stable result code such as success, timeout, invalid_signature, or
+  // missing_authz_grant
+  string code = 2;
+  // Human-readable result description
+  string message_ = 3;
+  // Hex-encoded nonce of the authentication challenge, when one was issued
+  string nonce = 4;
 }
 // Message sent by maker in bidirectional stream
 message MakerStreamStreamingRequest {
