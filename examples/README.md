@@ -17,6 +17,7 @@ including stream authentication.
 | `ts-retail/main-grpc.ts` | TypeScript | Retail (Taker) | gRPC | Authenticated TakerStream, RFQ request, quote aggregation, on-chain acceptance |
 | `go-mm/main/main.go` | Go | Market Maker | WebSocket | MM quote streaming via WebSocket |
 | `go-mm/main-grpc/main.go` | Go | Market Maker | gRPC | MM quote streaming via gRPC MakerStream |
+| `go-mm/taker-auth/main.go` | Go | Retail (Taker) | gRPC | TakerStream v1 auth-handshake probe (no RFQ or transaction) |
 | `python-mm/main.py` | Python | Market Maker | WebSocket/gRPC-web | MM quote streaming via authenticated MakerStream |
 | `python-mm/main-grpc.py` | Python | Market Maker | gRPC | MM quote streaming via authenticated gRPC MakerStream |
 | `python-mm/mark_quote_loop.py` | Python | Market Maker | WebSocket/gRPC-web | Configurable mark-based quote loop with optional fixed-price quoting |
@@ -61,6 +62,9 @@ go run main/main.go    # Run MM quote bot (WebSocket)
 # gRPC (requires proto code generation first)
 cd proto && ./generate.sh && cd ..
 go run main-grpc/main.go  # Run MM quote bot (gRPC)
+
+# Taker auth only (does not create an RFQ)
+go run ./taker-auth
 ```
 
 ### Python (MM)
