@@ -277,18 +277,26 @@ async function main() {
         return;
       case "challenge": {
         const challenge = response.challenge;
-        const signature = signTakerChallengeV1({
-          privateKey: RETAIL_PRIVATE_KEY,
-          contractAddress: CONTRACT_ADDRESS,
-          taker: TAKER_ADDRESS,
-          nonceHex: challenge.nonce,
-          expiresAt: BigInt(challenge.expires_at),
-        });
-        takerStream.write({
-          message_type: "auth",
-          auth: { signature },
-        });
-        console.log(`🔐 Taker auth challenge signed (nonce=${challenge.nonce})`);
+        try {
+          const signature = signTakerChallengeV1({
+            privateKey: RETAIL_PRIVATE_KEY,
+            contractAddress: CONTRACT_ADDRESS,
+            taker: TAKER_ADDRESS,
+            nonceHex: challenge.nonce,
+            expiresAt: BigInt(challenge.expires_at),
+          });
+          takerStream.write({
+            message_type: "auth",
+            auth: { signature },
+          });
+          console.log(`🔐 Taker auth challenge signed (nonce=${challenge.nonce})`);
+        } catch (err) {
+          const authError = err instanceof Error ? err : new Error(String(err));
+          authReject?.(authError);
+          authResolve = null;
+          authReject = null;
+          takerStream.end();
+        }
         return;
       }
       case "auth_result": {
