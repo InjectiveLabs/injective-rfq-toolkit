@@ -76,10 +76,18 @@ async def main():
         auth_contract_address=contract_address,
         timeout=10.0,
     )
-    await retail_client.connect()
-    auth_result = await retail_client.wait_for_auth_result(timeout=10.0)
-    if not auth_result["authenticated"]:
-        raise RuntimeError(f"Taker authentication failed: {auth_result}")
+    try:
+        await retail_client.connect()
+        auth_result = await retail_client.wait_for_auth_result(timeout=10.0)
+        if not auth_result["authenticated"]:
+            raise RuntimeError(f"Taker authentication failed: {auth_result}")
+    except Exception:
+        await asyncio.gather(
+            retail_client.close(),
+            mm_client.close(),
+            return_exceptions=True,
+        )
+        raise
     print("✅ Retail connected and authenticated to TakerStream")
 
     # Let connections stabilize
