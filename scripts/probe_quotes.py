@@ -581,6 +581,8 @@ async def run_probe(args: argparse.Namespace) -> int:
         config.indexer.ws_endpoint,
         request_address=taker.address,
         timeout=args.request_timeout,
+        auth_private_key=taker.private_key,
+        auth_contract_address=contract_address if taker.private_key else None,
     )
 
     summary: dict[str, Any] = {
@@ -603,6 +605,15 @@ async def run_probe(args: argparse.Namespace) -> int:
         connect_started = time.monotonic()
         await client.connect()
         summary["timing"]["connect_ms"] = elapsed_ms(connect_started)
+        if taker.private_key:
+            auth_result = await client.wait_for_auth_result(timeout=args.request_timeout)
+            summary["authentication"] = auth_result
+            if not auth_result["authenticated"]:
+                raise RuntimeError(f"Taker authentication failed: {auth_result}")
+            emit(args, "TakerStream authentication succeeded")
+        else:
+            summary["authentication"] = {"authenticated": False, "code": "not_requested"}
+            emit(args, "TakerStream authentication not requested (address-only probe)")
         client_id = str(uuid.uuid4())
         request_data = {
             "request_address": taker.address,

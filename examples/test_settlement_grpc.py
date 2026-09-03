@@ -37,11 +37,17 @@ from rfq_test.proto.injective_rfq_rpc_pb2 import (
     MakerStreamStreamingRequest,
     RFQExpiryType,
     RFQQuoteType,
+    TakerAuth,
     TakerStreamStreamingRequest,
 )
 from rfq_test.proto.injective_rfq_rpc_pb2_grpc import InjectiveRfqRPCStub
 from rfq_test.clients.contract import ContractClient
-from rfq_test.crypto.eip712 import bech32_to_evm, domain_separator, sign_quote_v2
+from rfq_test.crypto.eip712 import (
+    bech32_to_evm,
+    domain_separator,
+    sign_quote_v2,
+    sign_taker_challenge_v1,
+)
 from rfq_test.models.types import Direction
 from rfq_test.utils.price import PriceFetcher, quantize_to_tick
 
@@ -226,7 +232,13 @@ async def read_maker_stream(
         logger.error(f"MakerStream read loop error: {e}")
 
 
-async def read_taker_stream(call, queue: asyncio.Queue) -> None:
+async def read_taker_stream(
+    call,
+    queue: asyncio.Queue,
+    send_queue: asyncio.Queue,
+    retail_wallet: Wallet,
+    contract_address: str,
+) -> None:
     """Background task: read TakerStream responses and dispatch typed events to queue."""
     try:
         while True:
@@ -250,6 +262,23 @@ async def read_taker_stream(call, queue: asyncio.Queue) -> None:
                 ack = resp.request_ack
                 logger.info(f"TakerStream: request_ack RFQ#{ack.rfq_id} status={ack.status}")
                 await queue.put(("request_ack", ack))
+            elif msg_type == "challenge":
+                challenge = resp.challenge
+                signature = sign_taker_challenge_v1(
+                    private_key=retail_wallet.private_key,
+                    verifying_contract_bech32=contract_address,
+                    taker=retail_wallet.inj_address,
+                    nonce_hex=challenge.nonce,
+                    expires_at=int(challenge.expires_at),
+                )
+                await send_queue.put(
+                    TakerStreamStreamingRequest(
+                        message_type="auth",
+                        auth=TakerAuth(signature=signature),
+                    )
+                )
+            elif msg_type == "auth_result":
+                await queue.put(("auth_result", resp.auth_result))
             elif msg_type == "error":
                 logger.error(f"TakerStream: error {resp.error.code}: {resp.error.message_}")
                 await queue.put(("error", resp.error))
@@ -611,7 +640,10 @@ async def main():
         ("subscribe_to_quotes_updates", "true"),
         ("subscribe_to_settlement_updates", "true"),
     )
-    taker_metadata = (("request_address", retail_wallet.inj_address),)
+    taker_metadata = (
+        ("request_address", retail_wallet.inj_address),
+        ("auth_version", "v1"),
+    )
     print(f"   [debug] maker metadata: {maker_metadata}")
     print(f"   [debug] taker metadata: {taker_metadata}")
 
@@ -639,7 +671,15 @@ async def main():
             contract_address,
         )
     )
-    taker_reader = asyncio.create_task(read_taker_stream(taker_call, taker_recv_q))
+    taker_reader = asyncio.create_task(
+        read_taker_stream(
+            taker_call,
+            taker_recv_q,
+            taker_send_q,
+            retail_wallet,
+            signing_contract_address,
+        )
+    )
 
     # Keep both streams alive with periodic application-level pings.
     maker_pinger = asyncio.create_task(ping_loop(maker_send_q, MakerStreamStreamingRequest))
@@ -656,6 +696,16 @@ async def main():
         maker_reader.cancel()
         taker_reader.cancel()
         await channel.close()
+
+    try:
+        event_type, auth_result = await asyncio.wait_for(taker_recv_q.get(), timeout=10.0)
+    except asyncio.TimeoutError:
+        await shutdown_streams()
+        raise RuntimeError("Timed out waiting for TakerStream authentication")
+    if event_type != "auth_result" or not auth_result.authenticated:
+        await shutdown_streams()
+        raise RuntimeError(f"Taker authentication failed: {auth_result}")
+    print("   ✅ Retail authenticated to TakerStream")
 
     # Drain stale messages from live testnet traffic
     await asyncio.sleep(3)

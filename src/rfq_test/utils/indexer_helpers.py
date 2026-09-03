@@ -42,7 +42,12 @@ async def create_request_via_taker(
         env_config.indexer.ws_endpoint,
         request_address=wallet.inj_address,
         timeout=10.0,
+        auth_private_key=wallet.private_key,
+        auth_contract_address=env_config.contract.address,
     ) as taker:
+        auth_result = await taker.wait_for_auth_result()
+        if not auth_result["authenticated"]:
+            raise RuntimeError(f"Taker authentication failed: {auth_result}")
         response = await taker.send_request(request_data, wait_for_response=True)
     if response.get("type") != "ack" or response.get("status") != "success":
         raise RuntimeError(f"Failed to create request for quote test: {response}")

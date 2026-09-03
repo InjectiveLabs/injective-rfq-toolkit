@@ -86,6 +86,7 @@ from rfq_test.crypto.eip712 import (
     sign_quote_v2,
     sign_conditional_order_v2,
     sign_maker_challenge_v2,
+    sign_taker_challenge_v1,
     domain_separator,
     bech32_to_evm,
 )
@@ -102,7 +103,7 @@ from rfq_test.actors.admin        import Admin
 from rfq_test.utils.price import quantize_for_fpdecimal, quantize_to_tick
 ```
 
-> **API stability:** not committed to semver yet. Pin to a commit SHA if you're vendoring. The signing helpers (`sign_quote_v2`, `sign_conditional_order_v2`, `sign_maker_challenge_v2`) are the most stable surface — their digest layouts are locked to the on-chain contract.
+> **API stability:** not committed to semver yet. Pin to a commit SHA if you're vendoring. The signing helpers (`sign_quote_v2`, `sign_conditional_order_v2`, `sign_maker_challenge_v2`, `sign_taker_challenge_v1`) are the most stable surface — their digest layouts are locked to their corresponding verifiers.
 
 ---
 
@@ -187,7 +188,7 @@ The RFQ Indexer uses **gRPC-web over WebSocket** with protobuf framing. Two stre
 - **Signing:** **EIP-712 v2** typed-data digest → secp256k1 raw → `0x` + `r ‖ s ‖ v` (v=0/1, **not** 27/28). Custom layout, *not* `eth_signTypedData_v4`. Spec in [`crypto/eip712.py`](src/rfq_test/crypto/eip712.py); recipe in [PYTHON_BUILDING_GUIDE.md § Quote Signing (v2)](PYTHON_BUILDING_GUIDE.md#quote-signing-v2).
 - **Wire-required fields:** every quote and conditional-order create carries `sign_mode="v2"` and `evm_chain_id` (`1439` testnet, `1776` mainnet). Missing or empty values are rejected. Keep `chain_id` as the Cosmos string (`injective-888` / `injective-1`); do not put `1439` or `1776` in `chain_id`.
 - **MakerStream auth handshake:** the first server message after a maker connects is a `MakerChallenge`. Sign the `StreamAuthChallenge` typed-data and reply with `MakerAuth{evm_chain_id, signature}`. `MakerStreamClient` does this for you when you pass `auth_private_key` + `auth_evm_chain_id` + `auth_contract_address`. Standalone implementations in `examples/{python,go,ts}-mm/main-grpc.*`. Full protocol: [PYTHON_BUILDING_GUIDE.md § MakerStream Auth Handshake](PYTHON_BUILDING_GUIDE.md#makerstream-auth-handshake).
-- **TakerStream auth handshake:** pass `request_address`, `auth_private_key`, and `auth_contract_address` to `TakerStreamClient`. It requests auth v1, signs the chain-independent `TakerStreamAuthChallenge(address taker,bytes32 nonce,uint64 expiresAt)`, replies with `TakerAuth{signature}`, and exposes `authenticated`, `code`, `message`, and the correlating `nonce` through `wait_for_auth_result()`. The private key may belong to the taker or to an authorized Authz grantee. Authentication failure is informational and does not close the stream. Native gRPC references: `examples/ts-retail/main-grpc.ts` and `examples/go-mm/taker-auth/main.go`.
+- **TakerStream auth handshake:** pass `request_address`, `auth_private_key`, and `auth_contract_address` to `TakerStreamClient`. It requests auth v1, signs the chain-independent `TakerStreamAuthChallenge(address taker,bytes32 nonce,uint64 expiresAt)`, replies with `TakerAuth{signature}`, and exposes `authenticated`, `code`, `message`, and the correlating `nonce` through `wait_for_auth_result()`. The private key may belong to the taker or to an authorized Authz grantee. Authentication failure is informational and does not close the stream today, but clients should implement the handshake because that policy may become stricter. Native gRPC references: `examples/ts-retail/main-grpc.ts` and `examples/go-mm/taker-auth/main.go`.
 
 Test only the taker handshake against testnet (this does not submit an RFQ):
 

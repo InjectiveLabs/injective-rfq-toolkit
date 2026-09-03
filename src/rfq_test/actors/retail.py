@@ -46,8 +46,13 @@ class RetailUser:
         self._ws_client = TakerStreamClient(
             self.ws_url,
             request_address=self.address,
+            auth_private_key=self.wallet.private_key,
+            auth_contract_address=self.contract_client.contract_address,
         )
         await self._ws_client.connect()
+        auth_result = await self._ws_client.wait_for_auth_result()
+        if not auth_result["authenticated"]:
+            raise RuntimeError(f"Taker authentication failed: {auth_result}")
     
     async def disconnect(self) -> None:
         """Disconnect from WebSocket."""

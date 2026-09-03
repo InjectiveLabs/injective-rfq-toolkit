@@ -248,10 +248,15 @@ async def main():
     retail_client = TakerStreamClient(
         config.indexer.ws_endpoint,
         request_address=retail_wallet.inj_address,
+        auth_private_key=retail_wallet.private_key,
+        auth_contract_address=signing_contract_address,
         timeout=10.0,
     )
     await retail_client.connect()
-    print("   ✅ Retail connected to TakerStream")
+    auth_result = await retail_client.wait_for_auth_result(timeout=10.0)
+    if not auth_result["authenticated"]:
+        raise RuntimeError(f"Taker authentication failed: {auth_result}")
+    print("   ✅ Retail connected and authenticated to TakerStream")
 
     # Drain stale messages from live testnet traffic
     await asyncio.sleep(3)
