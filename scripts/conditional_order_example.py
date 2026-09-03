@@ -191,7 +191,12 @@ async def cmd_submit(args) -> None:
     async with TakerStreamClient(
         base_url=env_config.indexer.ws_endpoint,
         request_address=wallet.inj_address,
+        auth_private_key=private_key,
+        auth_contract_address=env_config.contract.address,
     ) as client:
+        auth_result = await client.wait_for_auth_result(timeout=10.0)
+        if not auth_result["authenticated"]:
+            raise RuntimeError(f"Taker authentication failed: {auth_result}")
         result = await client.send_conditional_order(
             order_body=order_body,
             signature=signature,

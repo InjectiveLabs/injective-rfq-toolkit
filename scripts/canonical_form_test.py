@@ -128,9 +128,21 @@ async def main():
     print(f"Env:      testnet ({chain_id}, evm_chain_id={evm_chain_id})")
     print(f"Market:   {market.symbol}  ({market.id[:18]}…)  tick=0.01\n")
 
-    retail_ws = TakerStreamClient(env.indexer.ws_endpoint,
-                                  request_address=retail.inj_address, timeout=15.0)
-    await retail_ws.connect()
+    retail_ws = TakerStreamClient(
+        env.indexer.ws_endpoint,
+        request_address=retail.inj_address,
+        timeout=15.0,
+        auth_private_key=retail.private_key,
+        auth_contract_address=contract,
+    )
+    try:
+        await retail_ws.connect()
+        auth_result = await retail_ws.wait_for_auth_result(timeout=10.0)
+        if not auth_result["authenticated"]:
+            raise RuntimeError(f"Taker authentication failed: {auth_result}")
+    except Exception:
+        await asyncio.gather(retail_ws.close(), return_exceptions=True)
+        raise
     mm_ws = MakerStreamClient(env.indexer.ws_endpoint,
                               maker_address=mm.inj_address, timeout=15.0)
     await mm_ws.connect()

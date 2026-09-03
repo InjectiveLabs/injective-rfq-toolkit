@@ -530,7 +530,7 @@ challenge-response protocol without the reusable client wrapper.
 
 ## TakerStream Auth Handshake
 
-Taker authentication is optional and informational: failed authentication does not close the stream or block RFQ requests. Request it by opening `TakerStream` with both `request_address` and `auth_version: v1` metadata.
+Taker authentication is currently optional and informational: failed authentication does not close the stream or block RFQ requests. Clients should still implement it because this policy may become stricter. Request it by opening `TakerStream` with both `request_address` and `auth_version: v1` metadata.
 
 The server sends `TakerChallenge{nonce, expires_at}`. There is intentionally no EVM chain ID: taker auth uses the chain-independent domain
 `EIP712Domain(string name,string version,address verifyingContract)` and signs:

@@ -43,11 +43,25 @@ class RetailUser:
     
     async def connect(self) -> None:
         """Connect to WebSocket TakerStream (sends request_address as metadata)."""
-        self._ws_client = TakerStreamClient(
+        client = TakerStreamClient(
             self.ws_url,
             request_address=self.address,
+            auth_private_key=self.wallet.private_key,
+            auth_contract_address=self.contract_client.contract_address,
         )
-        await self._ws_client.connect()
+        self._ws_client = client
+        try:
+            await client.connect()
+            auth_result = await client.wait_for_auth_result()
+            if not auth_result["authenticated"]:
+                raise RuntimeError(f"Taker authentication failed: {auth_result}")
+        except Exception:
+            try:
+                await client.close()
+            except Exception:
+                logger.exception("Failed to close TakerStream after setup failure")
+            self._ws_client = None
+            raise
     
     async def disconnect(self) -> None:
         """Disconnect from WebSocket."""

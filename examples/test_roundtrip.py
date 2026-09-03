@@ -60,6 +60,9 @@ async def main():
     mm_client = MakerStreamClient(
         config.indexer.ws_endpoint,
         maker_address=mm_wallet.inj_address,
+        auth_private_key=mm_wallet.private_key,
+        auth_evm_chain_id=evm_chain_id,
+        auth_contract_address=contract_address,
         timeout=10.0,
     )
     await mm_client.connect()
@@ -69,10 +72,23 @@ async def main():
     retail_client = TakerStreamClient(
         config.indexer.ws_endpoint,
         request_address=retail_wallet.inj_address,
+        auth_private_key=retail_wallet.private_key,
+        auth_contract_address=contract_address,
         timeout=10.0,
     )
-    await retail_client.connect()
-    print("✅ Retail connected to TakerStream")
+    try:
+        await retail_client.connect()
+        auth_result = await retail_client.wait_for_auth_result(timeout=10.0)
+        if not auth_result["authenticated"]:
+            raise RuntimeError(f"Taker authentication failed: {auth_result}")
+    except Exception:
+        await asyncio.gather(
+            retail_client.close(),
+            mm_client.close(),
+            return_exceptions=True,
+        )
+        raise
+    print("✅ Retail connected and authenticated to TakerStream")
 
     # Let connections stabilize
     await asyncio.sleep(2)
