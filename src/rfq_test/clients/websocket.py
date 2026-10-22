@@ -417,6 +417,9 @@ class TakerStreamClient(BaseStreamClient):
 
                 elif msg_type == "error":
                     err = response.error
+                    if err.code == "authentication_required_soon":
+                        logger.warning("Stream notice: %s", _format_stream_error(err))
+                        continue
                     logger.error("Stream error: %s", _format_stream_error(err))
                     await self._message_queue.put(("error", err))
 
