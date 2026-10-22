@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     chain_lcd_url: Optional[str] = Field(default=None, alias="CHAIN_LCD_URL")
     chain_comet_bft_url: Optional[str] = Field(default=None, alias="CHAIN_COMETBFT_ENDPOINT")
     contract_address: Optional[str] = Field(default=None, alias="RFQ_CONTRACT_ADDRESS")
+    sigauth_registry_address: Optional[str] = Field(
+        default=None, alias="RFQ_SIGAUTH_REGISTRY_CONTRACT_ADDRESS"
+    )
     evm_chain_id: Optional[int] = Field(default=None, alias="RFQ_EVM_CHAIN_ID")
     
     # ============================================================
@@ -181,6 +184,8 @@ def get_environment_config() -> EnvironmentConfig:
         config.chain.comet_bft_endpoint = settings.chain_comet_bft_url
     if settings.contract_address:
         config.contract.address = settings.contract_address
+    if settings.sigauth_registry_address:
+        config.contract.sigauth_registry_address = settings.sigauth_registry_address
     if settings.evm_chain_id:
         config.chain.evm_chain_id = settings.evm_chain_id
     

@@ -22,6 +22,7 @@ indexer:
 
 contract:
   address: "inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk"
+  sigauth_registry_address: "inj1rektxpyh40cz8qdcgstwgq89lhts6dy849pn6e"
 
 # Testnet derivative markets. Mark price: .../injective/exchange/v2/derivative/markets/{id}
 markets:
