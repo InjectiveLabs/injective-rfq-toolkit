@@ -197,6 +197,30 @@ RFQ_ENV=testnet PYTHONPATH=src python scripts/probe_taker_auth.py
 cd examples/go-mm && go run ./taker-auth
 ```
 
+### SigAuth delegates
+
+Both maker and taker delegation use the same SigAuth registry, configured as
+`contract.sigauth_registry_address` in the selected environment's configuration.
+Override it with `RFQ_SIGAUTH_REGISTRY_CONTRACT_ADDRESS` when needed.
+
+The scope consumer is the RFQ contract (`contract.address`). The action IDs are
+`1` for maker quotes and MakerStream, `2` for taker intents, and `3` for
+TakerStream requests. Each scope needs a separate authorization from the principal.
+The signing domain continues to use the RFQ contract address.
+
+To test an existing taker delegation, select the environment with `RFQ_ENV`, set
+its corresponding retail private key variable (`<ENV>_RETAIL_PRIVATE_KEY`) to
+the delegate's key, and pass the principal's address:
+
+```bash
+PYTHONPATH=src python scripts/probe_taker_auth.py --principal inj1...
+```
+
+The probe checks the active on-chain authorization for action `3`, then signs
+the principal's stream challenge with the delegate's key. It submits no transaction
+or RFQ request. For MakerStream, use the principal as `maker_address` and
+the delegate's key as `auth_private_key`, with an authorization for action `1`.
+
 ### Production timing lessons
 
 Maker quote expiries may be short. Some production makers require roughly 1.5s

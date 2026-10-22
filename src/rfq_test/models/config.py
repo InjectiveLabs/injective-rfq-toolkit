@@ -39,6 +39,7 @@ class ContractConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     
     address: str
+    sigauth_registry_address: Optional[str] = None
 
 
 class MarketConfig(BaseModel):

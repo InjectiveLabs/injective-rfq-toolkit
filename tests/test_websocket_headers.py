@@ -119,6 +119,34 @@ async def test_taker_stream_sends_auth_metadata_headers():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["authentication_required_soon", "invalid_request"])
+async def test_taker_stream_distinguishes_auth_notice_from_request_error(code):
+    response = TakerStreamResponse(message_type="error")
+    response.error.code = code
+    response.error.message_ = "test message"
+    ack = TakerStreamResponse(message_type="request_ack")
+    ack.request_ack.rfq_id = 123
+    ack.request_ack.client_id = "request-1"
+    ack.request_ack.status = "accepted"
+    client = TakerStreamClient("wss://example.test", request_address="inj1taker")
+    client._connected = True
+    client._ws = SimpleNamespace(recv=AsyncMock(side_effect=[
+        encode_grpc_message(response), encode_grpc_message(ack), asyncio.CancelledError(),
+    ]))
+
+    await client._receive_loop()
+
+    if code == "authentication_required_soon":
+        result = await client._wait_for_response("request-1", timeout=1)
+        assert result["type"] == "ack"
+        assert result["rfq_id"] == 123
+    else:
+        from rfq_test.exceptions import IndexerValidationError
+        with pytest.raises(IndexerValidationError, match="invalid_request"):
+            await client._wait_for_response("request-1", timeout=1)
+
+
+@pytest.mark.asyncio
 async def test_taker_stream_answers_auth_challenge_and_queues_result():
     challenge = TakerChallenge(
         nonce="0x" + "22" * 32,
