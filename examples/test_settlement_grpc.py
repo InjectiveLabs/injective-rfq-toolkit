@@ -330,11 +330,12 @@ async def mm_wait_and_quote(
     signing_contract_address: str,
     evm_chain_id: int,
     target_rfq_id: int,
+    target_taker: str,
     quote_price: Decimal,
     min_fill_quantity: str,
 ) -> dict | None:
-    """MM: wait for OUR request (by rfq_id), then sign and enqueue quote."""
-    print(f"   ⏳ MM waiting for RFQ#{target_rfq_id}...")
+    """MM: wait for OUR request (by taker + rfq_id), then sign and enqueue quote."""
+    print(f"   ⏳ MM waiting for taker={target_taker} RFQ#{target_rfq_id}...")
 
     start = time.monotonic()
     received = None
@@ -342,11 +343,15 @@ async def mm_wait_and_quote(
         try:
             event_type, data = await asyncio.wait_for(maker_recv_q.get(), timeout=5.0)
             if event_type == "request":
-                if int(data.rfq_id) == target_rfq_id:
+                if int(data.rfq_id) == target_rfq_id and data.request_address == target_taker:
                     received = data
                     break
                 else:
-                    logger.info(f"Skipping other request: RFQ#{data.rfq_id}")
+                    logger.info(
+                        "Skipping other request: taker=%s RFQ#%s",
+                        data.request_address,
+                        data.rfq_id,
+                    )
             elif event_type == "error":
                 raise RuntimeError(f"Maker stream error: {data}")
             else:
@@ -355,7 +360,7 @@ async def mm_wait_and_quote(
             continue
 
     if not received:
-        print(f"   ❌ MM never received RFQ#{target_rfq_id}")
+        print(f"   ❌ MM never received taker={target_taker} RFQ#{target_rfq_id}")
         return None
 
     print(f"   ✅ MM received RFQ#{received.rfq_id}")
@@ -769,6 +774,7 @@ async def main():
             signing_contract_address,
             evm_chain_id,
             rfq_id,
+            retail_wallet.inj_address,
             maker_quote_price,
             min_fill_quantity,
         )

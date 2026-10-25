@@ -776,7 +776,7 @@ The RFQ indexer monitors mark prices and triggers the order when the condition i
 | `contract_address` | string | RFQ contract address (wire-only — bound via the v2 domain separator) |
 | `taker` | string | Taker's Injective address |
 | `epoch` | uint64 | Incremented by `CancelAllIntents`. Start at `1`; increment after each global cancel. |
-| `rfq_id` | uint64 | Conditional-order intent ID. For live RFQ requests this is backend-assigned in the request ACK; for pre-signed intents use a fresh nonce such as current Unix timestamp in ms. |
+| `rfq_id` | uint64 | Taker-scoped conditional-order intent ID. For live RFQ requests this is backend-assigned in the request ACK; for pre-signed intents use a fresh taker-scoped nonce such as current Unix timestamp in ms. Makers and executors should key requests by `(taker, rfq_id)`, not `rfq_id` alone. |
 | `market_id` | string | Derivative market ID (0x hex) |
 | `subaccount_nonce` | uint32 | Subaccount index (default `0`) |
 | `lane_version` | uint64 | Incremented by `CancelIntentLane`. Start at `1`; increment after each per-market cancel. |

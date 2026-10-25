@@ -94,7 +94,7 @@ async def _build_order(private_key: str, env_config, market_id: str) -> tuple[di
             f"(got {ticks}). Prices may be rejected by the exchange."
         )
 
-    rfq_id = int(time.time() * 1000)            # unique ID — use ms timestamp
+    rfq_id = int(time.time() * 1000)            # taker-scoped intent nonce
     deadline_ms = rfq_id + 24 * 60 * 60 * 1000  # 24 hours from now
 
     # Conditional order parameters — adjust to your needs

@@ -47,10 +47,11 @@ async def mm_wait_and_quote(
     contract_address,
     evm_chain_id,
     target_rfq_id,
+    target_taker,
     quote_price: Decimal,
 ):
-    """MM: wait for OUR request (by rfq_id), then sign and send quote."""
-    print(f"   ⏳ MM waiting for RFQ#{target_rfq_id}...")
+    """MM: wait for OUR request (by taker + rfq_id), then sign and send quote."""
+    print(f"   ⏳ MM waiting for taker={target_taker} RFQ#{target_rfq_id}...")
 
     # Keep pulling requests until we find ours
     start = time.monotonic()
@@ -58,16 +59,21 @@ async def mm_wait_and_quote(
     while (time.monotonic() - start) < 45:
         try:
             req = await mm_client.wait_for_request(timeout=5)
-            if int(req["rfq_id"]) == target_rfq_id:
+            request_taker = req.get("taker") or req.get("request_address", "")
+            if int(req["rfq_id"]) == target_rfq_id and request_taker == target_taker:
                 received = req
                 break
             else:
-                logger.info(f"Skipping other request: RFQ#{req['rfq_id']}")
+                logger.info(
+                    "Skipping other request: taker=%s RFQ#%s",
+                    request_taker,
+                    req["rfq_id"],
+                )
         except Exception:
             continue
 
     if not received:
-        print(f"   ❌ MM never received RFQ#{target_rfq_id}")
+        print(f"   ❌ MM never received taker={target_taker} RFQ#{target_rfq_id}")
         return None
 
     print(f"   ✅ MM received RFQ#{received['rfq_id']}")
@@ -301,7 +307,7 @@ async def main():
     rfq_id = int(request_ack["rfq_id"])
     print(f"   📬 Request ACK received: RFQ#{rfq_id} status={request_ack['status']}")
 
-    # Run MM and retail concurrently; MM filters for our rfq_id
+    # Run MM and retail concurrently; MM filters for our taker + rfq_id.
     mm_task = asyncio.create_task(
         mm_wait_and_quote(
             mm_client,
@@ -310,6 +316,7 @@ async def main():
             contract_address,
             evm_chain_id,
             rfq_id,
+            retail_wallet.inj_address,
             maker_quote_price,
         )
     )

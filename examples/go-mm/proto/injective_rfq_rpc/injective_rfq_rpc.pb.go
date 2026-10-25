@@ -1936,7 +1936,7 @@ type CreateConditionalOrderRequest struct {
 	// contract_address     (string)  — RFQ contract bech32 address
 	// taker               (string)  — taker bech32 address
 	// epoch               (uint64)  — taker's current epoch
-	// rfq_id              (uint64)  — unique order ID
+	// rfq_id              (uint64)  — taker-scoped order ID
 	// market_id           (string)  — derivative market ID hex
 	// subaccount_nonce    (uint32)  — taker subaccount index
 	// lane_version        (uint64)  — lane version for replay protection
