@@ -19,6 +19,11 @@ indexer:
   grpc_endpoint: "rfq.grpc.injective.network:443"
   grpc_web_endpoint: "https://rfq.grpc-web.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
 
+# RFQ pricer: public read-only indicative prices (no auth).
+pricer:
+  grpc_endpoint: "rfq-pricer.grpc.injective.network:443"
+  http_endpoint: "https://rfq-pricer.grpc-web.injective.network"
+
 contract:
   # Canonical mainnet RFQ contract.
   # Set RFQ_CONTRACT_ADDRESS in .env only for private/test deployments.
