@@ -11,6 +11,7 @@
     "ts-mm": "tsx ts-mm/main.ts",
     "ts-retail-grpc": "tsx ts-retail/main-grpc.ts",
     "ts-mm-grpc": "tsx ts-mm/main-grpc.ts",
+    "ts-pricer": "tsx ts-retail/pricer.ts",
     "ts-retail-setup": "tsx ts-retail/setup.ts",
     "ts-mm-setup": "tsx ts-mm/setup.ts",
     "build": "tsc",

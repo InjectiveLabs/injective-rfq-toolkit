@@ -15,9 +15,11 @@ including stream authentication.
 | `ts-mm/main-grpc.ts` | TypeScript | Market Maker | gRPC | MM quote streaming via gRPC MakerStream |
 | `ts-retail/main.ts` | TypeScript | Retail (Taker) | WebSocket | RFQ request, quote aggregation, on-chain acceptance |
 | `ts-retail/main-grpc.ts` | TypeScript | Retail (Taker) | gRPC | Authenticated TakerStream, RFQ request, quote aggregation, on-chain acceptance |
+| `ts-retail/pricer.ts` | TypeScript | Any | gRPC | Indicative prices from the public rfq-pricer API (no keys) |
 | `go-mm/main/main.go` | Go | Market Maker | WebSocket | MM quote streaming via WebSocket |
 | `go-mm/main-grpc/main.go` | Go | Market Maker | gRPC | MM quote streaming via gRPC MakerStream |
 | `go-mm/taker-auth/main.go` | Go | Retail (Taker) | gRPC | TakerStream v1 auth-handshake probe (no RFQ or transaction) |
+| `go-mm/pricer/main.go` | Go | Any | gRPC | Indicative prices from the public rfq-pricer API (no keys) |
 | `python-mm/main.py` | Python | Market Maker | WebSocket/gRPC-web | MM quote streaming via authenticated MakerStream |
 | `python-mm/main-grpc.py` | Python | Market Maker | gRPC | MM quote streaming via authenticated gRPC MakerStream |
 | `python-mm/mark_quote_loop.py` | Python | Market Maker | WebSocket/gRPC-web | Configurable mark-based quote loop with optional fixed-price quoting |
@@ -30,6 +32,7 @@ including stream authentication.
 | `test_settlement.py` | Full E2E settlement test (WebSocket, MakerStream auth, on-chain settlement) |
 | `test_settlement_grpc.py` | Full E2E settlement test (gRPC) |
 | `taker_multi_quote.py` | Authenticated taker + three authenticated makers, multi-quote settlement |
+| `pricer.py` | Indicative prices from the public rfq-pricer API (gRPC, no keys) |
 | `derive_key.py` | Key derivation utility |
 
 ## Getting Started
@@ -46,6 +49,7 @@ npm run ts-mm          # Run MM quote bot (WebSocket)
 npm run ts-mm-grpc     # Run MM quote bot (gRPC)
 npm run ts-retail      # Run retail flow (WebSocket)
 npm run ts-retail-grpc # Run retail flow (gRPC)
+npm run ts-pricer      # Read indicative prices (no keys needed)
 ```
 
 ### Go
@@ -65,6 +69,9 @@ go run main-grpc/main.go  # Run MM quote bot (gRPC)
 
 # Taker auth only (does not create an RFQ)
 go run ./taker-auth
+
+# Read indicative prices (no keys needed)
+go run ./pricer
 ```
 
 ### Python (MM)
@@ -109,6 +116,8 @@ See `.env.example` for required configuration:
 | `CHAIN_ID` | Cosmos chain ID for transactions and RFQ wire payloads (`injective-888` testnet, `injective-1` mainnet); not the numeric EVM chain ID |
 | `EVM_CHAIN_ID` | EIP-712 domain chain ID for quote signatures (`1439` testnet, `1776` mainnet) |
 | `GRPC_ENDPOINT` | gRPC endpoint (e.g. `localhost:9910`) — required for gRPC examples |
+| `PRICER_GRPC_ENDPOINT` | rfq-pricer gRPC endpoint for the Go and TypeScript pricer examples (default `rfq-pricer.grpc.injective.network:443`) |
+| `PRICER_MARKET_IDS` | Comma-separated market IDs for the Go and TypeScript pricer examples (default mainnet BTC/USDC PERP) |
 | `RFQ_CONTRACT_ADDRESS` | Override RFQ contract address for config-driven Python examples |
 | `RFQ_ENV` | Environment to load: `local`, `testnet`, or `mainnet` |
 

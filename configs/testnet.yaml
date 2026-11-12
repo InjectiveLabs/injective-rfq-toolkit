@@ -20,6 +20,11 @@ indexer:
   grpc_endpoint: "rfq.grpc.testnet.injective.network:443"
   grpc_web_endpoint: "https://rfq.grpc-web.testnet.injective.network/injective_rfq_rpc.InjectiveRfqRPC"
 
+# RFQ pricer: public read-only indicative prices (no auth).
+pricer:
+  grpc_endpoint: "rfq-pricer.grpc.testnet.injective.network:443"
+  http_endpoint: "https://rfq-pricer.grpc-web.testnet.injective.network"
+
 contract:
   address: "inj1qw7jk82hjvf79tnjykux6zacuh9gl0z0wl3ruk"
   sigauth_registry_address: "inj1rektxpyh40cz8qdcgstwgq89lhts6dy849pn6e"

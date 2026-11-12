@@ -1,0 +1,75 @@
+// Code generated with goa v3.7.0, DO NOT EDIT.
+//
+// InjectiveRfqPricerRPC protocol buffer definition
+//
+// Command:
+// $ goa gen github.com/InjectiveLabs/injective-indexer/api/design -o ../
+
+syntax = "proto3";
+
+package injective_rfq_pricer_rpc;
+
+option go_package = "/injective_rfq_pricer_rpcpb";
+
+// InjectiveRfqPricerRPC defines the public API of the RFQ pricer: indicative
+// RFQ prices per market and notional tier.
+service InjectiveRfqPricerRPC {
+	// Stream RFQ pricing snapshots: one message per subscribed market per tick. A
+// snapshot expires a server-configured TTL after its ts and is never sent once
+// expired. Within a second of a market's last sent snapshot expiring, the
+// stream sends one withdrawal for it with the current ts, the last mark price
+// and empty tiers, meaning no current pricing. A newer snapshot restores the
+// market
+	rpc PricingStream (PricingStreamRequest) returns (stream PricingStreamResponse);
+	// Get the latest RFQ pricing snapshot of a market; not_found when the market
+// has no unexpired snapshot
+	rpc GetPricing (GetPricingRequest) returns (GetPricingResponse);
+}
+
+message PricingStreamRequest {
+	// Market IDs to subscribe to
+	repeated string market_ids = 1;
+}
+
+message PricingStreamResponse {
+	// Market ID
+	string market_id = 1;
+	// Snapshot timestamp in UNIX milliseconds, or the withdrawal time for a stream
+// withdrawal
+	sint64 ts = 2;
+	// Mark price as a decimal string
+	string mark_price = 3;
+	// Best bid and ask per notional tier; empty in a stream withdrawal, meaning no
+// current pricing
+	repeated RFQPricingTierType tiers = 4;
+}
+// Best RFQ bid and ask for a notional tier; a one-sided tier has an empty
+// missing side
+message RFQPricingTierType {
+	// Tier notional in USD
+	uint64 notional_usd = 1;
+	// Best bid price as a decimal string, empty when no maker quoted it
+	string bid = 2;
+	// Best ask price as a decimal string, empty when no maker quoted it
+	string ask = 3;
+	// Age in milliseconds of the older of the bid and ask quotes
+	sint64 age_ms = 4;
+}
+
+message GetPricingRequest {
+	// Market ID
+	string market_id = 1;
+}
+
+message GetPricingResponse {
+	// Market ID
+	string market_id = 1;
+	// Snapshot timestamp in UNIX milliseconds, or the withdrawal time for a stream
+// withdrawal
+	sint64 ts = 2;
+	// Mark price as a decimal string
+	string mark_price = 3;
+	// Best bid and ask per notional tier; empty in a stream withdrawal, meaning no
+// current pricing
+	repeated RFQPricingTierType tiers = 4;
+}

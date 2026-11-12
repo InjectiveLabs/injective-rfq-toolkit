@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     indexer_http_url: Optional[str] = Field(default=None, alias="RFQ_HTTP_URL")
     indexer_grpc_url: Optional[str] = Field(default=None, alias="RFQ_GRPC_URL")
     indexer_grpc_web_url: Optional[str] = Field(default=None, alias="RFQ_GRPC_WEB_URL")
+    pricer_grpc_url: Optional[str] = Field(default=None, alias="RFQ_PRICER_GRPC_URL")
     chain_grpc_url: Optional[str] = Field(default=None, alias="CHAIN_GRPC_URL")
     chain_lcd_url: Optional[str] = Field(default=None, alias="CHAIN_LCD_URL")
     chain_comet_bft_url: Optional[str] = Field(default=None, alias="CHAIN_COMETBFT_ENDPOINT")
@@ -161,6 +162,7 @@ def get_environment_config() -> EnvironmentConfig:
     Environment variables can override YAML config:
     - RFQ_WS_URL: Override WebSocket endpoint
     - RFQ_HTTP_URL: Override HTTP endpoint
+    - RFQ_PRICER_GRPC_URL: Override pricer gRPC endpoint
     - CHAIN_GRPC_URL: Override chain gRPC endpoint
     - CHAIN_LCD_URL: Override chain LCD endpoint
     """
@@ -176,6 +178,8 @@ def get_environment_config() -> EnvironmentConfig:
         config.indexer.grpc_endpoint = settings.indexer_grpc_url
     if settings.indexer_grpc_web_url:
         config.indexer.grpc_web_endpoint = settings.indexer_grpc_web_url
+    if settings.pricer_grpc_url and config.pricer:
+        config.pricer.grpc_endpoint = settings.pricer_grpc_url
     if settings.chain_grpc_url:
         config.chain.grpc_endpoint = settings.chain_grpc_url
     if settings.chain_lcd_url:
