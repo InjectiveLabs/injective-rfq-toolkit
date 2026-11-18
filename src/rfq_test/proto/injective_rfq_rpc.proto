@@ -19,8 +19,6 @@ service InjectiveRfqRPC {
   rpc StreamRequest (StreamRequestRequest) returns (stream StreamRequestResponse);
   // Create RFQ quote
   rpc Quote (QuoteRequest) returns (QuoteResponse);
-  // Stream RFQ quotes
-  rpc StreamQuote (StreamQuoteRequest) returns (stream StreamQuoteResponse);
   // List RFQ settlements
   rpc ListSettlement (ListSettlementRequest) returns (ListSettlementResponse);
   // Stream RFQ settlements
@@ -186,19 +184,6 @@ message QuoteResponse {
   string status = 1;
 }
 
-message StreamQuoteRequest {
-  // Filter by addresses
-  repeated string addresses = 1;
-  // Filter by market IDs
-  repeated string market_ids = 2;
-}
-
-message StreamQuoteResponse {
-  // RFQ quote update
-  RFQProcessedQuoteType quote = 1;
-  // Operation type (insert, update, delete)
-  string stream_operation = 2;
-}
 // RFQ quote result streamed in real-time
 message RFQProcessedQuoteType {
   // Error message if quote is rejected
