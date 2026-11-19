@@ -20,7 +20,8 @@ src/rfq_test/                # Python package (importable as `rfq_test`)
   ├── clients/               # Network clients
   │   ├── websocket.py       #   TakerStreamClient, MakerStreamClient (auth-handshake aware)
   │   ├── chain.py           #   ChainClient — authz grants, balances, txs
-  │   └── contract.py        #   ContractClient — AcceptQuote, CancelIntentLane, CancelAllIntents
+  │   ├── contract.py        #   ContractClient — AcceptQuote, CancelIntentLane, CancelAllIntents
+  │   └── pricer.py          #   PricerClient — indicative prices per market and notional tier
   ├── crypto/                # Signing & wallets
   │   ├── eip712.py          #   sign_quote_v2, sign_conditional_order_v2,
   │   │                      #   sign_maker_challenge_v2, sign_taker_challenge_v1,
@@ -65,6 +66,7 @@ tests/                       # pytest suite — smoke / functional / contract / 
 | **On-chain settlement** | `clients.contract.ContractClient.accept_quote` | Builds `MsgPrivilegedExecuteContract` with the right wrapping |
 | **Conditional-order cancellation** | `clients.contract.ContractClient.{cancel_intent_lane, cancel_all_intents}` | Lane-level vs global epoch bumps |
 | **Authz grant orchestration** | `clients.chain.ChainClient.grant_authz` | `GenericAuthorization`, no expiration, gas-heuristic broadcast |
+| **Indicative prices without an RFQ** | `clients.pricer.PricerClient` | `get_pricing` + `pricing_stream` on the public rfq-pricer API; no auth, no signing |
 | **Generated proto bindings** | `proto/injective_rfq_rpc_pb2.py` + hand-written `rfq_messages.py` | Includes `MakerChallenge`, `MakerAuth`, conditional-order frames |
 | **Test harness** | `tests/`, `factories/`, `utils.scenario`, `actors/` | pytest with smoke/functional/contract/load/validation marks |
 
@@ -80,6 +82,7 @@ from rfq_test import Settings, get_settings, Direction, Quote, Request, Settleme
 from rfq_test.clients.websocket import MakerStreamClient, TakerStreamClient
 from rfq_test.clients.chain    import ChainClient
 from rfq_test.clients.contract import ContractClient
+from rfq_test.clients.pricer   import PricerClient
 
 # Signing
 from rfq_test.crypto.eip712 import (
@@ -142,6 +145,7 @@ python examples/test_roundtrip.py      # WS round-trip: request → ACK → quot
 python examples/test_settlement.py     # full E2E with on-chain AcceptQuote
 python examples/python-mm/main-grpc.py # standalone MM bot (no rfq_test dep)
 python examples/python-mm/mark_quote_loop.py --edge-bps 25 --max-quantity 20
+RFQ_ENV=mainnet python examples/pricer.py 0x...   # indicative prices, no keys needed
 ```
 
 To check whether external MMs are quoting a market without needing taker funds:
@@ -278,6 +282,32 @@ Cancellation is on-chain via `ContractClient.cancel_intent_lane(market_id, subac
 
 Reference: [PYTHON_BUILDING_GUIDE.md § Conditional Orders](PYTHON_BUILDING_GUIDE.md#conditional-orders-tpsl), `scripts/conditional_order_example.py`.
 
+### Indicative prices (rfq-pricer)
+
+To read prices, use the pricer instead of sending price-only RFQs. It is public and read-only: no auth, no signing.
+
+| | Testnet | Mainnet |
+|---|---|---|
+| gRPC | `rfq-pricer.grpc.testnet.injective.network:443` | `rfq-pricer.grpc.injective.network:443` |
+| REST | `https://rfq-pricer.grpc-web.testnet.injective.network` | `https://rfq-pricer.grpc-web.injective.network` |
+
+- `GetPricing(market_id)` or `GET /pricing/v1/markets/{market_id}` returns the latest snapshot: mark price plus best bid and ask per notional tier (USD). It returns `not_found` when the market has no unexpired snapshot.
+- `PricingStream(market_ids)` sends one snapshot per subscribed market per tick.
+- A one-sided tier has an empty `bid` or `ask`. `age_ms` is the age of the older of the two quotes.
+- A stream message with empty `tiers` is a withdrawal: the market's last snapshot expired and it has no current pricing until a newer snapshot arrives.
+- Prices are indicative. To trade, send an RFQ and accept a signed quote.
+
+```python
+from rfq_test.clients.pricer import PricerClient
+
+client = PricerClient("rfq-pricer.grpc.injective.network:443")
+snapshot = await client.get_pricing(market_id)   # None when no snapshot
+async for snapshot in client.pricing_stream([market_id]):
+    ...
+```
+
+Examples: `examples/pricer.py`, `examples/ts-retail/pricer.ts`, `examples/go-mm/pricer/main.go`. Proto: `src/rfq_test/proto/injective_rfq_pricer_rpc.proto`.
+
 ## Regenerating proto code
 
 After editing `src/rfq_test/proto/injective_rfq_rpc.proto`:
@@ -291,6 +321,8 @@ After editing `src/rfq_test/proto/injective_rfq_rpc.proto`:
 ```
 
 Overwrites `injective_rfq_rpc_pb2.py` and `injective_rfq_rpc_pb2_grpc.py`. After regen, review field/type changes (especially `evm_chain_id` field numbers, nested `Expiry`, and the `MakerChallenge` / `MakerAuth` shapes) and update `clients/websocket.py` if needed. `grpcio-tools` is a dev extra (`pip install -e ".[dev]"`).
+
+`injective_rfq_pricer_rpc.proto` only needs message stubs (`PricerClient` calls the channel directly), so regenerate it with `--python_out` alone. `examples/go-mm/proto/generate.sh` regenerates the Go stubs for both protos.
 
 ---
 
