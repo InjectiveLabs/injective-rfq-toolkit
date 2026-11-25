@@ -32,7 +32,10 @@ const endpoint =
 const marketIds = (
   process.env.PRICER_MARKET_IDS ??
   "0x0ee7ca44147bab6ec81ac293b5fe7915488e612af59964b2d663d6008d861dee"
-).split(",");
+)
+  .split(",")
+  .map((id) => id.trim())
+  .filter((id) => id !== "");
 
 type Tier = { notional_usd: string; bid: string; ask: string; age_ms: string };
 type Snapshot = { market_id: string; ts: string; mark_price: string; tiers: Tier[] };

@@ -84,7 +84,7 @@ type PricingStreamResponse struct {
 	Ts int64 `protobuf:"zigzag64,2,opt,name=ts,proto3" json:"ts,omitempty"`
 	// Mark price as a decimal string
 	MarkPrice string `protobuf:"bytes,3,opt,name=mark_price,json=markPrice,proto3" json:"mark_price,omitempty"`
-	// Best bid and ask per notional tier; empty in a stream withdrawal, meaning no
+	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
 	// current pricing
 	Tiers []*RFQPricingTierType `protobuf:"bytes,4,rep,name=tiers,proto3" json:"tiers,omitempty"`
 }
@@ -149,7 +149,7 @@ func (x *PricingStreamResponse) GetTiers() []*RFQPricingTierType {
 	return nil
 }
 
-// Best RFQ bid and ask for a notional tier; a one-sided tier has an empty
+// Indicative RFQ bid and ask for a notional tier; a one-sided tier has an empty
 // missing side
 type RFQPricingTierType struct {
 	state         protoimpl.MessageState
@@ -158,11 +158,11 @@ type RFQPricingTierType struct {
 
 	// Tier notional in USD
 	NotionalUsd uint64 `protobuf:"varint,1,opt,name=notional_usd,json=notionalUsd,proto3" json:"notional_usd,omitempty"`
-	// Best bid price as a decimal string, empty when no maker quoted it
+	// Indicative bid price as a decimal string, empty when the tier has no bid
 	Bid string `protobuf:"bytes,2,opt,name=bid,proto3" json:"bid,omitempty"`
-	// Best ask price as a decimal string, empty when no maker quoted it
+	// Indicative ask price as a decimal string, empty when the tier has no ask
 	Ask string `protobuf:"bytes,3,opt,name=ask,proto3" json:"ask,omitempty"`
-	// Age in milliseconds of the older of the bid and ask quotes
+	// Age in milliseconds of the oldest maker quote behind the tier prices
 	AgeMs int64 `protobuf:"zigzag64,4,opt,name=age_ms,json=ageMs,proto3" json:"age_ms,omitempty"`
 }
 
@@ -286,7 +286,7 @@ type GetPricingResponse struct {
 	Ts int64 `protobuf:"zigzag64,2,opt,name=ts,proto3" json:"ts,omitempty"`
 	// Mark price as a decimal string
 	MarkPrice string `protobuf:"bytes,3,opt,name=mark_price,json=markPrice,proto3" json:"mark_price,omitempty"`
-	// Best bid and ask per notional tier; empty in a stream withdrawal, meaning no
+	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
 	// current pricing
 	Tiers []*RFQPricingTierType `protobuf:"bytes,4,rep,name=tiers,proto3" json:"tiers,omitempty"`
 }

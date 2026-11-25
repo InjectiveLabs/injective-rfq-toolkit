@@ -36,20 +36,20 @@ message PricingStreamResponse {
 	sint64 ts = 2;
 	// Mark price as a decimal string
 	string mark_price = 3;
-	// Best bid and ask per notional tier; empty in a stream withdrawal, meaning no
+	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
 // current pricing
 	repeated RFQPricingTierType tiers = 4;
 }
-// Best RFQ bid and ask for a notional tier; a one-sided tier has an empty
+// Indicative RFQ bid and ask for a notional tier; a one-sided tier has an empty
 // missing side
 message RFQPricingTierType {
 	// Tier notional in USD
 	uint64 notional_usd = 1;
-	// Best bid price as a decimal string, empty when no maker quoted it
+	// Indicative bid price as a decimal string, empty when the tier has no bid
 	string bid = 2;
-	// Best ask price as a decimal string, empty when no maker quoted it
+	// Indicative ask price as a decimal string, empty when the tier has no ask
 	string ask = 3;
-	// Age in milliseconds of the older of the bid and ask quotes
+	// Age in milliseconds of the oldest maker quote behind the tier prices
 	sint64 age_ms = 4;
 }
 
@@ -66,7 +66,7 @@ message GetPricingResponse {
 	sint64 ts = 2;
 	// Mark price as a decimal string
 	string mark_price = 3;
-	// Best bid and ask per notional tier; empty in a stream withdrawal, meaning no
+	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
 // current pricing
 	repeated RFQPricingTierType tiers = 4;
 }

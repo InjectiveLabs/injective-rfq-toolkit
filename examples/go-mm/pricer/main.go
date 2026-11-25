@@ -62,7 +62,12 @@ func show(marketID string, ts int64, markPrice string, tiers []*pb.RFQPricingTie
 func main() {
 	_ = godotenv.Load()
 	endpoint := envOr("PRICER_GRPC_ENDPOINT", defaultEndpoint)
-	marketIDs := strings.Split(envOr("PRICER_MARKET_IDS", defaultMarketIDs), ",")
+	var marketIDs []string
+	for _, id := range strings.Split(envOr("PRICER_MARKET_IDS", defaultMarketIDs), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			marketIDs = append(marketIDs, id)
+		}
+	}
 
 	creds := credentials.NewTLS(nil)
 	if strings.HasPrefix(endpoint, "localhost") || strings.HasPrefix(endpoint, "127.0.0.1") {
