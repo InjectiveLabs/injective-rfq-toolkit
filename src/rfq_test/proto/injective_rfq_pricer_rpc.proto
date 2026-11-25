@@ -2,9 +2,6 @@
 //
 // InjectiveRfqPricerRPC protocol buffer definition
 //
-// Command:
-// $ goa gen github.com/InjectiveLabs/injective-indexer/api/design -o ../
-
 syntax = "proto3";
 
 package injective_rfq_pricer_rpc;
