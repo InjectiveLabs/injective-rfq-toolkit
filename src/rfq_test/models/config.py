@@ -39,7 +39,6 @@ class PricerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     grpc_endpoint: str  # Native gRPC endpoint (host:port)
-    http_endpoint: Optional[str] = None  # REST: GET {http_endpoint}/pricing/v1/markets/{id}
 
 
 class ContractConfig(BaseModel):

@@ -289,9 +289,8 @@ To read prices, use the pricer instead of sending price-only RFQs. It is public 
 | | Testnet | Mainnet |
 |---|---|---|
 | gRPC | `rfq-pricer.grpc.testnet.injective.network:443` | `rfq-pricer.grpc.injective.network:443` |
-| REST | `https://rfq-pricer.grpc-web.testnet.injective.network` | `https://rfq-pricer.grpc-web.injective.network` |
 
-- `GetPricing(market_id)` or `GET /pricing/v1/markets/{market_id}` returns the latest snapshot: mark price plus indicative bid and ask per notional tier (USD). It returns `not_found` when the market has no unexpired snapshot.
+- `GetPricing(market_id)` returns the latest snapshot: mark price plus indicative bid and ask per notional tier (USD). It returns `not_found` when the market has no unexpired snapshot.
 - `PricingStream(market_ids)` sends one snapshot per subscribed market per tick.
 - A one-sided tier has an empty `bid` or `ask`. `age_ms` is the age of the oldest maker quote behind the tier prices.
 - A stream message with empty `tiers` is a withdrawal: the market's last snapshot expired and it has no current pricing until a newer snapshot arrives.

@@ -22,7 +22,6 @@ indexer:
 # RFQ pricer: public read-only indicative prices (no auth).
 pricer:
   grpc_endpoint: "rfq-pricer.grpc.injective.network:443"
-  http_endpoint: "https://rfq-pricer.grpc-web.injective.network"
 
 contract:
   # Canonical mainnet RFQ contract.
