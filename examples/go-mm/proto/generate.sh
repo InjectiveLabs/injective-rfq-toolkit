@@ -11,19 +11,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROTO_SRC="$SCRIPT_DIR/../../../src/rfq_test/proto/injective_rfq_rpc.proto"
-OUT_DIR="$SCRIPT_DIR/injective_rfq_rpc"
+PROTO_DIR="$SCRIPT_DIR/../../../src/rfq_test/proto"
 
-mkdir -p "$OUT_DIR"
+for NAME in injective_rfq_rpc injective_rfq_pricer_rpc; do
+  OUT_DIR="$SCRIPT_DIR/$NAME"
+  mkdir -p "$OUT_DIR"
 
-protoc \
-  --proto_path="$(dirname "$PROTO_SRC")" \
-  --go_out="$OUT_DIR" \
-  --go_opt=paths=source_relative \
-  --go_opt=Minjective_rfq_rpc.proto=mm-scripts-go/proto/injective_rfq_rpc \
-  --go-grpc_out="$OUT_DIR" \
-  --go-grpc_opt=paths=source_relative \
-  --go-grpc_opt=Minjective_rfq_rpc.proto=mm-scripts-go/proto/injective_rfq_rpc \
-  "$(basename "$PROTO_SRC")"
+  protoc \
+    --proto_path="$PROTO_DIR" \
+    --go_out="$OUT_DIR" \
+    --go_opt=paths=source_relative \
+    --go_opt=M$NAME.proto=mm-scripts-go/proto/$NAME \
+    --go-grpc_out="$OUT_DIR" \
+    --go-grpc_opt=paths=source_relative \
+    --go-grpc_opt=M$NAME.proto=mm-scripts-go/proto/$NAME \
+    "$NAME.proto"
 
-echo "✅ Generated Go gRPC code in $OUT_DIR"
+  echo "✅ Generated Go gRPC code in $OUT_DIR"
+done

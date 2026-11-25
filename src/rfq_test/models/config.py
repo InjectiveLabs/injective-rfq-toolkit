@@ -34,6 +34,13 @@ class IndexerConfig(BaseModel):
     grpc_web_endpoint: Optional[str] = None  # Optional gRPC-web endpoint
 
 
+class PricerConfig(BaseModel):
+    """RFQ pricer configuration (public, read-only pricing API)."""
+    model_config = ConfigDict(extra="forbid")
+
+    grpc_endpoint: str  # Native gRPC endpoint (host:port)
+
+
 class ContractConfig(BaseModel):
     """RFQ Contract configuration."""
     model_config = ConfigDict(extra="forbid")
@@ -87,6 +94,7 @@ class EnvironmentConfig(BaseModel):
     environment: Literal["local", "testnet", "mainnet"]
     chain: ChainConfig
     indexer: IndexerConfig
+    pricer: Optional[PricerConfig] = None
     contract: ContractConfig
     markets: list[MarketConfig]
     faucet: FaucetConfig = FaucetConfig()
