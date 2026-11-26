@@ -39,7 +39,9 @@ type InjectiveRfqPricerRPCClient interface {
 	// expired. Within a second of a market's last sent snapshot expiring, the
 	// stream sends one withdrawal for it with the current ts, the last mark price
 	// and empty tiers, meaning no current pricing. A newer snapshot restores the
-	// market
+	// market. With with_snapshot the stream first sends the current snapshot of
+	// every subscribed market in one message, so a subscribed market absent from
+	// that message has no current pricing
 	PricingStream(ctx context.Context, in *PricingStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[PricingStreamResponse], error)
 }
 
@@ -82,7 +84,9 @@ type InjectiveRfqPricerRPCServer interface {
 	// expired. Within a second of a market's last sent snapshot expiring, the
 	// stream sends one withdrawal for it with the current ts, the last mark price
 	// and empty tiers, meaning no current pricing. A newer snapshot restores the
-	// market
+	// market. With with_snapshot the stream first sends the current snapshot of
+	// every subscribed market in one message, so a subscribed market absent from
+	// that message has no current pricing
 	PricingStream(*PricingStreamRequest, grpc.ServerStreamingServer[PricingStreamResponse]) error
 	mustEmbedUnimplementedInjectiveRfqPricerRPCServer()
 }

@@ -291,6 +291,7 @@ To read prices, use the pricer instead of sending price-only RFQs. It is public 
 | gRPC | `rfq-pricer.grpc.testnet.injective.network:443` | `rfq-pricer.grpc.injective.network:443` |
 
 - `PricingStream(market_ids)` sends one snapshot per subscribed market per tick: mark price plus indicative bid and ask per notional tier (USD).
+- With `with_snapshot`, the first message carries the current snapshot of every subscribed market in `snapshots`; a subscribed market absent from it has no current pricing.
 - A one-sided tier has an empty `bid` or `ask`. `age_ms` is the age of the oldest maker quote behind the tier prices.
 - A stream message with empty `tiers` is a withdrawal: the market's last snapshot expired and it has no current pricing until a newer snapshot arrives.
 - Prices are indicative. To trade, send an RFQ and accept a signed quote.
@@ -299,7 +300,9 @@ To read prices, use the pricer instead of sending price-only RFQs. It is public 
 from rfq_test.clients.pricer import PricerClient
 
 client = PricerClient("rfq-pricer.grpc.injective.network:443")
-async for snapshot in client.pricing_stream([market_id]):
+stream = client.pricing_stream([market_id], with_snapshot=True)
+first = await anext(aiter(stream))   # first.snapshots: current snapshot per market
+async for snapshot in stream:
     ...
 ```
 

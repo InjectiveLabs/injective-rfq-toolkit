@@ -1,7 +1,8 @@
 /*
  * RFQ pricer (native gRPC): read indicative RFQ prices without sending an RFQ.
  *
- * Follows the pricing stream of each market.
+ * Opens the pricing stream with the current snapshot of each market in the
+ * first message, then follows the updates.
  * Public and read-only: no keys, no auth.
  *
  * Env:
@@ -81,11 +82,29 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	fmt.Println("streaming, Ctrl+C to stop")
-	stream, err := client.PricingStream(ctx, &pb.PricingStreamRequest{MarketIds: marketIDs})
+	stream, err := client.PricingStream(ctx, &pb.PricingStreamRequest{MarketIds: marketIDs, WithSnapshot: true})
 	if err != nil {
 		log.Fatalf("PricingStream: %v", err)
 	}
+	first, err := stream.Recv()
+	if ctx.Err() != nil {
+		return
+	}
+	if err != nil {
+		log.Fatalf("PricingStream recv: %v", err)
+	}
+	priced := make(map[string]bool, len(first.Snapshots))
+	for _, snapshot := range first.Snapshots {
+		priced[strings.ToLower(snapshot.MarketId)] = true
+		show(snapshot.MarketId, snapshot.Ts, snapshot.MarkPrice, snapshot.Tiers)
+	}
+	for _, marketID := range marketIDs {
+		if !priced[strings.ToLower(marketID)] {
+			fmt.Printf("%s no snapshot\n", marketID)
+		}
+	}
+
+	fmt.Println("streaming, Ctrl+C to stop")
 	for {
 		res, err := stream.Recv()
 		if ctx.Err() != nil {
