@@ -16,29 +16,36 @@ service InjectiveRfqPricerRPC {
 // expired. Within a second of a market's last sent snapshot expiring, the
 // stream sends one withdrawal for it with the current ts, the last mark price
 // and empty tiers, meaning no current pricing. A newer snapshot restores the
-// market
+// market. With with_snapshot the stream first sends the current snapshot of
+// every subscribed market in one message, so a subscribed market absent from
+// that message has no current pricing
 	rpc PricingStream (PricingStreamRequest) returns (stream PricingStreamResponse);
-	// Get the latest RFQ pricing snapshot of a market; not_found when the market
-// has no unexpired snapshot
-	rpc GetPricing (GetPricingRequest) returns (GetPricingResponse);
 }
 
 message PricingStreamRequest {
 	// Market IDs to subscribe to
 	repeated string market_ids = 1;
+	// Send the current snapshots of all subscribed markets in one first message,
+// before any update
+	bool with_snapshot = 2;
 }
 
 message PricingStreamResponse {
-	// Market ID
+	// Market ID; empty in the with_snapshot first message
 	string market_id = 1;
-	// Snapshot timestamp in UNIX milliseconds, or the withdrawal time for a stream
-// withdrawal
+	// Snapshot timestamp in UNIX milliseconds, or the send time for a withdrawal
+// and for the with_snapshot first message
 	sint64 ts = 2;
-	// Mark price as a decimal string
+	// Mark price as a decimal string; empty in the with_snapshot first message
 	string mark_price = 3;
 	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
-// current pricing
+// current pricing, and in the with_snapshot first message
 	repeated RFQPricingTierType tiers = 4;
+	// Set only in the first message of a stream opened with with_snapshot: the
+// current unexpired snapshot of each subscribed market, in the order the
+// markets were requested. A subscribed market absent from it has no current
+// pricing
+	repeated RFQPricingSnapshotType snapshots = 5;
 }
 // Indicative RFQ bid and ask for a notional tier; a one-sided tier has an empty
 // missing side
@@ -52,21 +59,14 @@ message RFQPricingTierType {
 	// Age in milliseconds of the oldest maker quote behind the tier prices
 	sint64 age_ms = 4;
 }
-
-message GetPricingRequest {
+// RFQ pricing snapshot of a market
+message RFQPricingSnapshotType {
 	// Market ID
 	string market_id = 1;
-}
-
-message GetPricingResponse {
-	// Market ID
-	string market_id = 1;
-	// Snapshot timestamp in UNIX milliseconds, or the withdrawal time for a stream
-// withdrawal
+	// Snapshot timestamp in UNIX milliseconds
 	sint64 ts = 2;
 	// Mark price as a decimal string
 	string mark_price = 3;
-	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
-// current pricing
+	// Indicative bid and ask per notional tier
 	repeated RFQPricingTierType tiers = 4;
 }

@@ -66,7 +66,7 @@ tests/                       # pytest suite — smoke / functional / contract / 
 | **On-chain settlement** | `clients.contract.ContractClient.accept_quote` | Builds `MsgPrivilegedExecuteContract` with the right wrapping |
 | **Conditional-order cancellation** | `clients.contract.ContractClient.{cancel_intent_lane, cancel_all_intents}` | Lane-level vs global epoch bumps |
 | **Authz grant orchestration** | `clients.chain.ChainClient.grant_authz` | `GenericAuthorization`, no expiration, gas-heuristic broadcast |
-| **Indicative prices without an RFQ** | `clients.pricer.PricerClient` | `get_pricing` + `pricing_stream` on the public rfq-pricer API; no auth, no signing |
+| **Indicative prices without an RFQ** | `clients.pricer.PricerClient` | `pricing_stream` on the public rfq-pricer API; no auth, no signing |
 | **Generated proto bindings** | `proto/injective_rfq_rpc_pb2.py` + hand-written `rfq_messages.py` | Includes `MakerChallenge`, `MakerAuth`, conditional-order frames |
 | **Test harness** | `tests/`, `factories/`, `utils.scenario`, `actors/` | pytest with smoke/functional/contract/load/validation marks |
 
@@ -290,8 +290,8 @@ To read prices, use the pricer instead of sending price-only RFQs. It is public 
 |---|---|---|
 | gRPC | `rfq-pricer.grpc.testnet.injective.network:443` | `rfq-pricer.grpc.injective.network:443` |
 
-- `GetPricing(market_id)` returns the latest snapshot: mark price plus indicative bid and ask per notional tier (USD). It returns `not_found` when the market has no unexpired snapshot.
-- `PricingStream(market_ids)` sends one snapshot per subscribed market per tick.
+- `PricingStream(market_ids)` sends one snapshot per subscribed market per tick: mark price plus indicative bid and ask per notional tier (USD).
+- With `with_snapshot`, the first message carries the current snapshot of every subscribed market in `snapshots`; a subscribed market absent from it has no current pricing.
 - A one-sided tier has an empty `bid` or `ask`. `age_ms` is the age of the oldest maker quote behind the tier prices.
 - A stream message with empty `tiers` is a withdrawal: the market's last snapshot expired and it has no current pricing until a newer snapshot arrives.
 - Prices are indicative. To trade, send an RFQ and accept a signed quote.
@@ -300,8 +300,9 @@ To read prices, use the pricer instead of sending price-only RFQs. It is public 
 from rfq_test.clients.pricer import PricerClient
 
 client = PricerClient("rfq-pricer.grpc.injective.network:443")
-snapshot = await client.get_pricing(market_id)   # None when no snapshot
-async for snapshot in client.pricing_stream([market_id]):
+stream = client.pricing_stream([market_id], with_snapshot=True)
+first = await anext(aiter(stream))   # first.snapshots: current snapshot per market
+async for snapshot in stream:
     ...
 ```
 

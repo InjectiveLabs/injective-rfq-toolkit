@@ -1,7 +1,8 @@
 /**
  * RFQ pricer (gRPC): read indicative RFQ prices without sending an RFQ.
  *
- * Fetches the latest snapshot of each market, then follows the pricing stream.
+ * Opens the pricing stream with the current snapshot of each market in the
+ * first message, then follows the updates.
  * Public and read-only: no keys, no auth.
  *
  * Env:
@@ -39,6 +40,7 @@ const marketIds = (
 
 type Tier = { notional_usd: string; bid: string; ask: string; age_ms: string };
 type Snapshot = { market_id: string; ts: string; mark_price: string; tiers: Tier[] };
+type StreamMessage = Snapshot & { snapshots: Snapshot[] };
 
 function show(s: Snapshot): void {
   if (s.tiers.length === 0) {
@@ -53,16 +55,6 @@ function show(s: Snapshot): void {
   }
 }
 
-function getPricing(client: any, marketId: string): Promise<Snapshot | null> {
-  return new Promise((resolve, reject) => {
-    client.GetPricing({ market_id: marketId }, (err: grpc.ServiceError | null, res: Snapshot) => {
-      if (err?.code === grpc.status.NOT_FOUND) return resolve(null);
-      if (err) return reject(err);
-      resolve(res);
-    });
-  });
-}
-
 async function main(): Promise<void> {
   const isLocal = endpoint.startsWith("localhost") || endpoint.startsWith("127.0.0.1");
   const client = new InjectiveRfqPricerRPC(
@@ -70,18 +62,21 @@ async function main(): Promise<void> {
     isLocal ? grpc.credentials.createInsecure() : grpc.credentials.createSsl()
   );
 
-  for (const marketId of marketIds) {
-    const snapshot = await getPricing(client, marketId);
-    if (snapshot === null) {
-      console.log(`${marketId} no snapshot`);
-      continue;
+  const stream = client.PricingStream({ market_ids: marketIds, with_snapshot: true });
+  let first = true;
+  stream.on("data", (message: StreamMessage) => {
+    if (!first) {
+      show(message);
+      return;
     }
-    show(snapshot);
-  }
-
-  console.log("streaming, Ctrl+C to stop");
-  const stream = client.PricingStream({ market_ids: marketIds });
-  stream.on("data", show);
+    first = false;
+    const priced = new Set(message.snapshots.map((s) => s.market_id.toLowerCase()));
+    message.snapshots.forEach(show);
+    for (const marketId of marketIds) {
+      if (!priced.has(marketId.toLowerCase())) console.log(`${marketId} no snapshot`);
+    }
+    console.log("streaming, Ctrl+C to stop");
+  });
   stream.on("error", (err: grpc.ServiceError) => {
     console.error(`PricingStream: ${err.message}`);
     process.exit(1);
