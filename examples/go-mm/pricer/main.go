@@ -1,7 +1,7 @@
 /*
  * RFQ pricer (native gRPC): read indicative RFQ prices without sending an RFQ.
  *
- * Fetches the latest snapshot of each market, then follows the pricing stream.
+ * Follows the pricing stream of each market.
  * Public and read-only: no keys, no auth.
  *
  * Env:
@@ -20,10 +20,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 
 	pb "mm-scripts-go/proto/injective_rfq_pricer_rpc"
 )
@@ -82,18 +80,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-
-	for _, marketID := range marketIDs {
-		res, err := client.GetPricing(ctx, &pb.GetPricingRequest{MarketId: marketID})
-		if status.Code(err) == codes.NotFound {
-			fmt.Printf("%s no snapshot\n", marketID)
-			continue
-		}
-		if err != nil {
-			log.Fatalf("GetPricing %s: %v", marketID, err)
-		}
-		show(res.MarketId, res.Ts, res.MarkPrice, res.Tiers)
-	}
 
 	fmt.Println("streaming, Ctrl+C to stop")
 	stream, err := client.PricingStream(ctx, &pb.PricingStreamRequest{MarketIds: marketIDs})

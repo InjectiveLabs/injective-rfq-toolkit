@@ -1,6 +1,6 @@
 """RFQ pricer: read indicative RFQ prices without sending an RFQ.
 
-Fetches the latest snapshot of each market, then follows the pricing stream.
+Follows the pricing stream of each market.
 Public and read-only: no keys, no auth.
 
 Usage:
@@ -41,13 +41,6 @@ async def main() -> None:
 
     client = PricerClient(config.pricer.grpc_endpoint)
     try:
-        for market_id in market_ids:
-            snapshot = await client.get_pricing(market_id)
-            if snapshot is None:
-                print(f"{market_id} no snapshot")
-                continue
-            show(snapshot)
-
         print("streaming, Ctrl+C to stop")
         async for snapshot in client.pricing_stream(market_ids):
             show(snapshot)

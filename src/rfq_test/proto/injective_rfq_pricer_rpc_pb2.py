@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1einjective_rfq_pricer_rpc.proto\x12\x18injective_rfq_pricer_rpc\"*\n\x14PricingStreamRequest\x12\x12\n\nmarket_ids\x18\x01 \x03(\t\"\x87\x01\n\x15PricingStreamResponse\x12\x11\n\tmarket_id\x18\x01 \x01(\t\x12\n\n\x02ts\x18\x02 \x01(\x12\x12\x12\n\nmark_price\x18\x03 \x01(\t\x12;\n\x05tiers\x18\x04 \x03(\x0b\x32,.injective_rfq_pricer_rpc.RFQPricingTierType\"T\n\x12RFQPricingTierType\x12\x14\n\x0cnotional_usd\x18\x01 \x01(\x04\x12\x0b\n\x03\x62id\x18\x02 \x01(\t\x12\x0b\n\x03\x61sk\x18\x03 \x01(\t\x12\x0e\n\x06\x61ge_ms\x18\x04 \x01(\x12\"&\n\x11GetPricingRequest\x12\x11\n\tmarket_id\x18\x01 \x01(\t\"\x84\x01\n\x12GetPricingResponse\x12\x11\n\tmarket_id\x18\x01 \x01(\t\x12\n\n\x02ts\x18\x02 \x01(\x12\x12\x12\n\nmark_price\x18\x03 \x01(\t\x12;\n\x05tiers\x18\x04 \x03(\x0b\x32,.injective_rfq_pricer_rpc.RFQPricingTierType2\xf4\x01\n\x15InjectiveRfqPricerRPC\x12r\n\rPricingStream\x12..injective_rfq_pricer_rpc.PricingStreamRequest\x1a/.injective_rfq_pricer_rpc.PricingStreamResponse0\x01\x12g\n\nGetPricing\x12+.injective_rfq_pricer_rpc.GetPricingRequest\x1a,.injective_rfq_pricer_rpc.GetPricingResponseB\x1dZ\x1b/injective_rfq_pricer_rpcpbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1einjective_rfq_pricer_rpc.proto\x12\x18injective_rfq_pricer_rpc\"*\n\x14PricingStreamRequest\x12\x12\n\nmarket_ids\x18\x01 \x03(\t\"\x87\x01\n\x15PricingStreamResponse\x12\x11\n\tmarket_id\x18\x01 \x01(\t\x12\n\n\x02ts\x18\x02 \x01(\x12\x12\x12\n\nmark_price\x18\x03 \x01(\t\x12;\n\x05tiers\x18\x04 \x03(\x0b\x32,.injective_rfq_pricer_rpc.RFQPricingTierType\"T\n\x12RFQPricingTierType\x12\x14\n\x0cnotional_usd\x18\x01 \x01(\x04\x12\x0b\n\x03\x62id\x18\x02 \x01(\t\x12\x0b\n\x03\x61sk\x18\x03 \x01(\t\x12\x0e\n\x06\x61ge_ms\x18\x04 \x01(\x12\x32\x8b\x01\n\x15InjectiveRfqPricerRPC\x12r\n\rPricingStream\x12..injective_rfq_pricer_rpc.PricingStreamRequest\x1a/.injective_rfq_pricer_rpc.PricingStreamResponse0\x01\x42\x1dZ\x1b/injective_rfq_pricer_rpcpbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -38,10 +38,6 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_PRICINGSTREAMRESPONSE']._serialized_end=240
   _globals['_RFQPRICINGTIERTYPE']._serialized_start=242
   _globals['_RFQPRICINGTIERTYPE']._serialized_end=326
-  _globals['_GETPRICINGREQUEST']._serialized_start=328
-  _globals['_GETPRICINGREQUEST']._serialized_end=366
-  _globals['_GETPRICINGRESPONSE']._serialized_start=369
-  _globals['_GETPRICINGRESPONSE']._serialized_end=501
-  _globals['_INJECTIVERFQPRICERRPC']._serialized_start=504
-  _globals['_INJECTIVERFQPRICERRPC']._serialized_end=748
+  _globals['_INJECTIVERFQPRICERRPC']._serialized_start=329
+  _globals['_INJECTIVERFQPRICERRPC']._serialized_end=468
 # @@protoc_insertion_point(module_scope)

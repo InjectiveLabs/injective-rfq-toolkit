@@ -1,7 +1,7 @@
 /**
  * RFQ pricer (gRPC): read indicative RFQ prices without sending an RFQ.
  *
- * Fetches the latest snapshot of each market, then follows the pricing stream.
+ * Follows the pricing stream of each market.
  * Public and read-only: no keys, no auth.
  *
  * Env:
@@ -53,31 +53,12 @@ function show(s: Snapshot): void {
   }
 }
 
-function getPricing(client: any, marketId: string): Promise<Snapshot | null> {
-  return new Promise((resolve, reject) => {
-    client.GetPricing({ market_id: marketId }, (err: grpc.ServiceError | null, res: Snapshot) => {
-      if (err?.code === grpc.status.NOT_FOUND) return resolve(null);
-      if (err) return reject(err);
-      resolve(res);
-    });
-  });
-}
-
 async function main(): Promise<void> {
   const isLocal = endpoint.startsWith("localhost") || endpoint.startsWith("127.0.0.1");
   const client = new InjectiveRfqPricerRPC(
     endpoint,
     isLocal ? grpc.credentials.createInsecure() : grpc.credentials.createSsl()
   );
-
-  for (const marketId of marketIds) {
-    const snapshot = await getPricing(client, marketId);
-    if (snapshot === null) {
-      console.log(`${marketId} no snapshot`);
-      continue;
-    }
-    show(snapshot);
-  }
 
   console.log("streaming, Ctrl+C to stop");
   const stream = client.PricingStream({ market_ids: marketIds });

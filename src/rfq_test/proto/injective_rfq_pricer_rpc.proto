@@ -18,9 +18,6 @@ service InjectiveRfqPricerRPC {
 // and empty tiers, meaning no current pricing. A newer snapshot restores the
 // market
 	rpc PricingStream (PricingStreamRequest) returns (stream PricingStreamResponse);
-	// Get the latest RFQ pricing snapshot of a market; not_found when the market
-// has no unexpired snapshot
-	rpc GetPricing (GetPricingRequest) returns (GetPricingResponse);
 }
 
 message PricingStreamRequest {
@@ -51,22 +48,4 @@ message RFQPricingTierType {
 	string ask = 3;
 	// Age in milliseconds of the oldest maker quote behind the tier prices
 	sint64 age_ms = 4;
-}
-
-message GetPricingRequest {
-	// Market ID
-	string market_id = 1;
-}
-
-message GetPricingResponse {
-	// Market ID
-	string market_id = 1;
-	// Snapshot timestamp in UNIX milliseconds, or the withdrawal time for a stream
-// withdrawal
-	sint64 ts = 2;
-	// Mark price as a decimal string
-	string mark_price = 3;
-	// Indicative bid and ask per notional tier; empty in a stream withdrawal, meaning no
-// current pricing
-	repeated RFQPricingTierType tiers = 4;
 }
